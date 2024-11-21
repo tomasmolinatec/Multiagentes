@@ -1,4 +1,5 @@
 from mesa import Agent
+from collections import deque
 
 class Car(Agent):
     
@@ -8,28 +9,62 @@ class Car(Agent):
         "right": (1,0),
         "left": (-1,0),
     }
-    def __init__(self,  pos, model):
+    def __init__(self, unique_id, model, pos):
         """
-        Creates a new random agent.
+        Creates a new agent with a position and model.
         Args:
             unique_id: The agent's ID
             model: Model reference for the agent
+            pos: Position of the agent (tuple)
         """
-        super().__init__(pos, model)
-        self.pos = pos
+        super().__init__(unique_id, model)  # Call the Agent constructor
+        self.pos = pos  # Set position
+        print(f"Agent position: {self.pos}")
+        self.destination = self.model.getRandomDest()
+        print("D:",self.destination)
+        self.route = self.GetRoute()
+        print(self.route)
+
+    def GetRoute(self):
+        """
+        Encuentra el camino más corto a una estación de carga usando búsqueda en anchura (BFS).
+        Retorna:
+            path: Lista de celdas que llevan a la estación de carga más cercana
+        """
+       
+        q  = deque([(self.pos,[])])  # Cola para BFS con la posición actual y el camino recorrido
+        visited = {self.pos}  # Mantiene registro de las celdas visitadas
+
+        while q:
+            cur, path = q.popleft()  # Toma el primer elemento de la cola
+            if cur == self.destination:
+                return path  # Retorna el camino si encuentra una estación de carga
+
+            
+            # Consigue solo las celdas que conoce el Roomba
+            if cur not in self.model.graph:
+                continue
+            possible_moves = self.model.graph[cur]
+
+            for move in possible_moves:
+                if move not in visited:
+                    visited.add(move)  # Marca la celda como visitada
+                    q.append((move, path + [move]))  # Añade la celda y el camino actualizado a la cola
+
 
     def move(self):
-        agents = self.model.grid.get_cell_list_contents([self.pos])
-        road = None
-        for a in agents:
-            if isinstance(a,Road):
-                road = a
-                break
+        if not self.route:
+            self.model.grid.remove_agent(self)
+            self.model.schedule.remove(self)
+            return
         
-        direction = road.getDirections()[0]
-        position_to_move_to = (self.pos[0] + Car.directionsDecode[direction][0], self.pos[1] + Car.directionsDecode[direction][1])
-        self.model.grid.move_agent(self, position_to_move_to)
-        return
+        next_move = self.route.pop(0)
+
+        for agent in self.model.grid.get_cell_list_contents([next_move]):
+            if isinstance(agent, Car):
+                return
+            
+        self.model.grid.move_agent(self, next_move)
 
 
 
