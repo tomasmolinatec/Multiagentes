@@ -34,7 +34,7 @@ def agent_portrayal(agent):
         
 
     elif (isinstance(agent, Traffic_Light)):
-        portrayal["Color"] = "red" if not agent.state else "green"
+        portrayal["Color"] = "red" if not agent.go else "green"
         portrayal["Layer"] = 0
         portrayal["w"] = 0.8
         portrayal["h"] = 0.8

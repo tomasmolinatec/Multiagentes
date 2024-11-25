@@ -175,6 +175,7 @@ class CityModel(Model):
         self.starting_positions = [(x,y) for x in [0,self.width-1] for y in [0,self.height-1]]
         
         self.graph = {}
+        self.memo = {}
         graphCreated = False
 
         for r, row in enumerate(lines):
@@ -203,11 +204,13 @@ class CityModel(Model):
 
 
                 elif col in ["S", "s"]:
-                    agent = Traffic_Light(f"tl_{r*self.width+c}", self, False if col == "S" else True, int(CityModel.mapData[col]))
+                    red = 7
+                    green = 6
+                    start = 0 if col == "S" else 6
+                    agent = Traffic_Light(f"tl_{r*self.width+c}", self, red, green, start)
                     self.grid.place_agent(agent, (c, self.height - r - 1))
                     self.schedule.add(agent)
                     self.traffic_lights.append(agent)
-                    road_agent = None
 
                     # for direction in CityModel.trafficLightDirection:
                     #     if lines[r + direction["pos"][1]][c + direction["pos"][0]] == direction["expected"]:
@@ -227,10 +230,10 @@ class CityModel(Model):
 
         # print(self.destinations)
 
-        # pos = (1,9)
-        # car = Car(1, self, pos) 
-        # self.schedule.add(car)
-        # self.grid.place_agent(car, pos)
+        pos = (1,9)
+        car = Car(1, self, pos) 
+        self.schedule.add(car)
+        self.grid.place_agent(car, pos)
 
         # self.num_agents = N
         self.running = True
