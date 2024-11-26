@@ -28,6 +28,10 @@ def initModel():
 
     if request.method == "POST":
         try:
+            with open("./2022_base.txt") as baseFile:
+                lines = baseFile.readlines()
+                width = len(lines[0]) - 1
+                height = len(lines)
 
             number_agents = int(request.json.get("NAgents"))
             width = int(request.json.get("width"))
@@ -35,7 +39,7 @@ def initModel():
             currentStep = 0
 
             # Create the model using the parameters sent by the application
-            randomModel = CityModel(0.1)
+            randomModel = CityModel(width, height, lines, 100)
             width = randomModel.width
             height = randomModel.height
 
