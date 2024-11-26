@@ -1,5 +1,7 @@
 from mesa import Agent
 from collections import deque
+import pprint
+import copy
 
 class Car(Agent):
     
@@ -18,12 +20,17 @@ class Car(Agent):
             pos: Position of the agent (tuple)
         """
         super().__init__(unique_id, model)  # Call the Agent constructor
-        self.position = pos  # Set position
+        
+        self.originalPosition = pos  # Set position
+        self.position = pos 
         self.timeStopped = 0
         self.destination = self.model.getRandomDest()
         # print("D:",self.destination)
         self.route = self.GetRoute(self.position)
-        # print(self.route)
+        self.routeIndex = 0
+        self.model.activeCars += 1
+        self.stepCount = 0
+       
 
     def GetRoute(self, start):
         """
@@ -34,18 +41,24 @@ class Car(Agent):
         key = str(start) + str(self.destination)
 
         if key in self.model.memo:
-            print("Used memoization!")
-            print(self.model.memo)
+            # print("Used memoization!")
+            self.model.memoCount += 1
+            # print("Original Pos:", self.originalPosition)
+            # print("Cur Pos:",self.position)
+            # print("Destination:",self.destination)
+            # print(self.model.memo[key])
             return self.model.memo[key]
 
+        # print("Didnt use memoization!")
+        self.model.noMemoCount += 1
         q  = deque([(start,[])])  # Cola para BFS con la posición actual y el camino recorrido
         visited = {start}  # Mantiene registro de las celdas visitadas
 
         while q:
             cur, path = q.popleft()  # Toma el primer elemento de la cola
             if cur == self.destination:
-                self.model.memo[key] = path
-                return path  # Retorna el camino si encuentra una estación de carga
+                self.model.memo[key] =  copy.deepcopy(path)
+                return path 
             
             if cur not in self.model.graph:
                 continue
@@ -56,11 +69,9 @@ class Car(Agent):
                     visited.add(move)  # Marca la celda como visitada
                     q.append((move, path + [move]))  # Añade la celda y el camino actualizado a la cola
             
-
-
+    
     def canChangeLane(self):
-        
-        direction = (self.route[0][0]- self.position[0], self.route[0][1]- self.position[1])
+        direction = (self.route[self.routeIndex][0] - self.position[0], self.route[self.routeIndex][1]- self.position[1])
 
         if direction in Car.possibleLaneChange:
             relatives_directions = Car.possibleLaneChange[direction]
@@ -73,72 +84,52 @@ class Car(Agent):
                 self.ChangeRoute(direction, to_move)
                 # print(self.route)
                 return True
+       
         return False
 
        
     def ChangeRoute(self, direction, next_move):
 
-        # print("\n")    
-        # print(direction)
-        # print("pos", self.position)
-        # print(self.route)
-
-        new_route = [next_move]
-        for i in range(1,len(self.route)):
-            if (self.route[i][0] - self.route[i-1][0], self.route[i][1]- self.route[i-1][1]) == direction:
-               
-               new_move = ( new_route[i - 1][0] + direction[0], new_route[i - 1][1] + direction[1])
-               new_route.append(new_move)
-            else:
-                # print("Found change:")
-                # print("i:",self.route[i])
-                # print("i-1:",self.route[i-1])
-                # print((self.route[i][0] - self.route[i-1][0], self.route[i][1]- self.route[i-1][1]))
-                # print(self.route[i])
-                new_route += self.route[i:]
-                # print("New route", new_route)
-                self.route = new_route
-                return 
-
-
-        # self.route[0] = next_move
+        self.route = [next_move] + self.GetRoute(next_move)
+        self.routeIndex = 0
+        # self.route[0] = next_mov
 
 
 
 
     def move(self):
+       
         if self.position == self.destination:
+            # print("GOT THERE")
             self.model.grid.remove_agent(self)
             self.model.schedule.remove(self)
+            self.model.activeCars -= 1
+            self.model.addStepCount(self.stepCount)
             return
         
 
-        next_move = self.route[0]
-        while next_move == self.position:
-            self.route.pop(0)
-            next_move = self.route[0]
+        next_move = self.route[self.routeIndex]
         
         canMove = True
 
         for agent in self.model.grid.get_cell_list_contents([next_move]):
             if isinstance(agent, Car) :
-                if self.timeStopped >= 1 and self.canChangeLane() :
-                    canMove = True
+                if len(self.route) > 0  and self.timeStopped >= 1 and self.canChangeLane() :
+                    next_move = self.route[self.routeIndex]
                 else: 
                     canMove = False
-            if isinstance(agent, Traffic_Light) and not agent.go:
+            elif isinstance(agent, Traffic_Light) and not agent.go:
                 canMove =  False
             
         if canMove:
             self.model.grid.move_agent(self, next_move)
-            self.position = self.route.pop(0)
+            self.position = next_move
+            self.routeIndex += 1
             self.timeStopped = 0
         else:
             self.timeStopped += 1
 
-        # if self.timeStopped > 8:
-        #     print("\n\nPosition:",self.position)
-        #     print(self.route)
+   
 
 
     def step(self):
@@ -146,6 +137,7 @@ class Car(Agent):
         Determines the new direction it will take, and then moves
         """
         self.move()
+        self.stepCount += 1
 
 class Traffic_Light(Agent):
     """
@@ -180,6 +172,8 @@ class Traffic_Light(Agent):
             if self.cur >= self.green:
                 self.cur = 0
                 self.go = False
+
+        
             
         
 
