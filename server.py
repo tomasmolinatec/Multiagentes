@@ -18,14 +18,10 @@ def agent_portrayal(agent):
                  }
 
     if (isinstance(agent, Road)):
-        directions = agent.getDirections()
         #print(direction)
-        if len(directions) > 1:
-            portrayal["Color"] = "purple"
-            portrayal["Shape"] = "rect"
-        else:
-            portrayal["Shape"] = "resources/"+directions[0].lower()+".png"
-        portrayal["Layer"] = 1
+        portrayal["Color"] = "gray"
+        portrayal["Shape"] = "rect"
+        portrayal["Layer"] = 0
         portrayal["w"] = 0.8
         portrayal["h"] = 0.8
     

@@ -48,9 +48,9 @@ class Car(Agent):
             path: Lista de celdas que llevan a la estación de carga más cercana
         """
         key = str(start) + str(self.destination)
-
+        print(key)
         if key in self.model.memo:
-            # print("Used memoization!")
+            print("Used memoization!")
             self.model.memoCount += 1
             # print("Original Pos:", self.originalPosition)
             # print("Cur Pos:",self.position)
@@ -58,7 +58,7 @@ class Car(Agent):
             # print(self.model.memo[key])
             return self.model.memo[key]
 
-        # print("Didnt use memoization!")
+        print("Didnt use memoization!")
         self.model.noMemoCount += 1
         q = deque(
             [(start, [])]
@@ -96,7 +96,7 @@ class Car(Agent):
                 and to_move[0] < self.model.width
                 and to_move[1] >= 0
                 and to_move[1] < self.model.height
-                and self.model.grid.is_cell_empty(to_move)
+                and self.isEmpty(to_move)
             ):
                 self.ChangeRoute(to_move)
                 # print(self.route)
@@ -104,8 +104,19 @@ class Car(Agent):
 
         return False
 
+    def isEmpty(self, pos):
+        agents = self.model.grid.get_cell_list_contents([pos])
+        # Define a set of agent classes that are considered "not empty"
+        blocked_agents = {Car, Obstacle, Traffic_Light, Destination}
+
+        # Check if any agent is of the blocked type
+        return not any(
+            isinstance(a, agent_type) for a in agents for agent_type in blocked_agents
+        )
+
     def ChangeRoute(self, next_move):
 
+        print(next_move, self.GetRoute(next_move))
         self.route = [next_move] + self.GetRoute(next_move)
         self.routeIndex = 0
         # self.route[0] = next_mov
@@ -121,11 +132,13 @@ class Car(Agent):
             return
 
         next_move = self.route[self.routeIndex]
+
         self.direction = (
             next_move[0] - self.position[0],
             next_move[1] - self.position[1],
         )
-        self.directionWritten = Car.directionsDecode[self.direction]
+        if self.direction in Car.directionsDecode:
+            self.directionWritten = Car.directionsDecode[self.direction]
 
         canMove = True
 
@@ -173,6 +186,7 @@ class Traffic_Light(Agent):
             state: Whether the traffic light is green or red
             timeToChange: After how many step should the traffic light change color 
         """
+        self.direction = ""
         self.red = red
         self.green = green
         self.total = red + green
@@ -232,7 +246,4 @@ class Road(Agent):
             direction: Direction where the cars can move
         """
         super().__init__(pos, model)
-        self.directions = direction
-
-    def getDirections(self):
-        return self.directions
+        self.direction = direction
