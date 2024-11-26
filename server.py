@@ -1,8 +1,13 @@
 from agent import *
 from model import CityModel
-from mesa.visualization import CanvasGrid, BarChartModule
+from mesa.visualization import CanvasGrid, BarChartModule, PieChartModule
 from mesa.visualization import ModularServer
 import mesa
+import random
+
+def random_color():
+    """Generate a random hex color string in the format #RRGGBB."""
+    return "#{:06x}".format(random.randint(0, 0xFFFFFF))
 
 def agent_portrayal(agent):
     if agent is None: return
@@ -63,12 +68,41 @@ with open('./2022_base.txt') as baseFile:
     width = len(lines[0])-1
     height = len(lines)
 
-model_params = { "Density": mesa.visualization.Slider("Density", 0.3, 0, 1, 0.05),}  
+
+steps_dist_max = 100
+model_params = { 
+    "width": width,
+    "height": height,
+    "lines": lines,
+    "steps_dist_max": steps_dist_max
+                }  
+
+chart_element = mesa.visualization.ChartModule(
+    [
+        {"Label": "ActiveCars", "Color": "#000066"},
+       
+    ]
+)
+
+
+steps_bar_chart = BarChartModule(
+    [{"Label": str(i), "Color": random_color()} for i in range(1, steps_dist_max + 1)], 
+    data_collector_name="datacollector"
+)
+
+memo_pie_chart = PieChartModule(
+    [
+        {"Label": "Memoization", "Color": "blue"},
+        {"Label": "No Memoization", "Color": "red"}
+    ]
+)
 
 #print(width, height)
 grid = CanvasGrid(agent_portrayal, width, height, 500, 500)
 
-server = ModularServer(CityModel, [grid], "Traffic Base", model_params)
+
+
+server = ModularServer(CityModel, [grid, chart_element, steps_bar_chart, memo_pie_chart], "Traffic Base", model_params)
                        
 server.port = 8521 # The default
 server.launch()

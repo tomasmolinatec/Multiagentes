@@ -5,6 +5,8 @@ from agent import *
 import json
 from collections import deque
 import pprint
+import mesa
+
 
 class CityModel(Model):
     """ 
@@ -154,23 +156,43 @@ class CityModel(Model):
     }
 
 
-    def __init__(self, Density):
+    def __init__(self, width, height, lines, steps_dist_max):
 
         # Load the map dictionary. The dictionary maps the characters in the map file to the corresponding agent.
         super().__init__()
         
-        self.density = Density
-        self.traffic_lights = []
         self.destinations = []
         self.unique_id = 0
-        # Load the map file. The map file is a text file where each character represents an agent.
-        with open('./2022_base.txt') as baseFile:
-            lines = baseFile.readlines()
-            self.width = len(lines[0])-1
-            self.height = len(lines)
-
+        self.width = width
+        self.height = height
         self.grid = MultiGrid(self.width, self.height, torus = False) 
         self.schedule = RandomActivation(self)
+        self.activeCars = 0
+        self.memoCount = 0
+        self.noMemoCount = 0
+
+        self.steps_distribution_lambda = {}
+        self.steps_distribution = {}
+
+
+
+        for i in range(1, steps_dist_max):
+            self.steps_distribution[i] = 0
+            self.steps_distribution_lambda[str(i)] = (lambda m, i=i: self.steps_distribution[i])
+
+        print(self.steps_distribution_lambda["1"])
+
+        self.datacollector = mesa.DataCollector(
+            self.steps_distribution_lambda | {
+                "ActiveCars": lambda m: self.activeCars,
+                "Memoization": lambda m: self.memoCount,
+                "No Memoization": lambda m: self.noMemoCount
+
+            }
+        )
+
+
+
         # Goes through each character in the map file and creates the corresponding agent.
         self.starting_positions = [(x,y) for x in [0,self.width-1] for y in [0,self.height-1]]
         
@@ -210,7 +232,6 @@ class CityModel(Model):
                     agent = Traffic_Light(f"tl_{r*self.width+c}", self, red, green, start)
                     self.grid.place_agent(agent, (c, self.height - r - 1))
                     self.schedule.add(agent)
-                    self.traffic_lights.append(agent)
 
                     # for direction in CityModel.trafficLightDirection:
                     #     if lines[r + direction["pos"][1]][c + direction["pos"][0]] == direction["expected"]:
@@ -230,30 +251,49 @@ class CityModel(Model):
 
         # print(self.destinations)
 
-        pos = (1,9)
-        car = Car(1, self, pos) 
-        self.schedule.add(car)
-        self.grid.place_agent(car, pos)
+        # pos = (1,9)
+        # car = Car(1, self, pos) 
+        # self.schedule.add(car)
+        # self.grid.place_agent(car, pos)
 
         # self.num_agents = N
         self.running = True
 
     def step(self):
         '''Advance the model by one step.'''
+        # pprint.pprint(self.memo)
 
-        for pos in self.starting_positions:
-            val = self.random.randrange(100)
-            if val <= self.density * 100:
+        
+        # for pos in self.starting_positions:
+        #     val = self.random.randrange(100)
+        #     if val < self.density * 100 and self.grid.is_cell_empty(pos):
+        #         car = Car(self.unique_id, self, pos) 
+        #         self.unique_id += 1
+        #         self.schedule.add(car)
+        #         self.grid.place_agent(car, pos)
+
+        if self.schedule.steps % 5 == 0:
+            for pos in self.starting_positions:
                 car = Car(self.unique_id, self, pos) 
                 self.unique_id += 1
                 self.schedule.add(car)
                 self.grid.place_agent(car, pos)
+                
 
         self.schedule.step()
+        self.datacollector.collect(self)
+        # with open("data.json", "w") as json_file:
+        #     json.dump(self.memo, json_file, indent=4)
 
     def getRandomDest(self):
         return self.random.choice(self.destinations)
     
+
+    def addStepCount(self, steps):
+
+        if steps in self.steps_distribution:
+            self.steps_distribution[steps] += 1
+
 
     def directionsDecode(self, cur, lines):
         
@@ -309,6 +349,6 @@ class CityModel(Model):
                         queue.append((x,y))
 
 
-        print("function ended")
+        # print("function ended")
         # pprint.pprint(self.graph)
         return
