@@ -125,7 +125,7 @@ class CityModel(Model):
             self.steps_distribution[i] = 0
             self.steps_distribution_lambda[str(i)] = (lambda m, i=i: self.steps_distribution[i])
 
-        print(self.steps_distribution_lambda["1"])
+
 
         self.datacollector = mesa.DataCollector(
             self.steps_distribution_lambda | {
@@ -144,12 +144,12 @@ class CityModel(Model):
         self.graph = {}
         self.memo = {}
         graphCreated = False
-
+        self.TLDirections = {}
         for r, row in enumerate(lines):
             for c, col in enumerate(row):
                 if col in ["v", "^", ">", "<"]:
-                    # agent = Road((c, self.height - r - 1), self, [CityModel.mapData[col]])
-                    # self.grid.place_agent(agent, (c, self.height - r - 1))
+                    agent = Road((c, self.height - r - 1), self, CityModel.mapData[col])
+                    self.grid.place_agent(agent, (c, self.height - r - 1))
 
                     if (not graphCreated):
                         p =  (c, self.height - r - 1)
@@ -177,14 +177,7 @@ class CityModel(Model):
                     agent = Traffic_Light(f"tl_{r*self.width+c}", self, red, green, start)
                     self.grid.place_agent(agent, (c, self.height - r - 1))
                     self.schedule.add(agent)
-
-                    # for direction in CityModel.trafficLightDirection:
-                    #     if lines[r + direction["pos"][1]][c + direction["pos"][0]] == direction["expected"]:
-                    #         road_agent = Road((c, self.height - r - 1), self, [CityModel.mapData[direction["expected"]]])
-                    #         break
-                    
-                    # self.grid.place_agent(road_agent, (c, self.height - r - 1))
-
+        
                 elif col == "#":
                     agent = Obstacle(f"ob_{r*self.width+c}", self)
                     self.grid.place_agent(agent, (c, self.height - r - 1))
@@ -194,6 +187,11 @@ class CityModel(Model):
                     self.grid.place_agent(agent, (c, self.height - r - 1))
                     self.destinations.append((c, self.height - r - 1))
 
+
+        for pos, dir in self.TLDirections.items():
+            TL = self.grid.get_cell_list_contents([pos])[0]
+            TL.direction = dir
+
         self.running = True
 
     def step(self):
@@ -202,14 +200,21 @@ class CityModel(Model):
 
         self.schedule.step()
         self.datacollector.collect(self)
+        added = True
 
-        if self.schedule.steps % 5 == 0:
+        if self.schedule.steps % 2 == 0:
+            added = False
             for pos in self.starting_positions:
-                car = Car(self.unique_id, self, pos) 
-                self.unique_id += 1
-                self.schedule.add(car)
-                self.grid.place_agent(car, pos)
-                
+                if self.hasNoCars(pos):
+                    car = Car(self.unique_id, self, pos) 
+                    self.unique_id += 1
+                    self.schedule.add(car)
+                    self.grid.place_agent(car, pos)
+                    added = True
+        
+        if not added:
+            print("stop")
+            self.running = False
 
        
         # with open("data.json", "w") as json_file:
@@ -218,6 +223,14 @@ class CityModel(Model):
     def getRandomDest(self):
         return self.random.choice(self.destinations)
     
+
+    def hasNoCars(self, pos):
+        agents = self.grid.get_cell_list_contents(pos)
+        
+        for a in agents:
+            if isinstance(a, Car):
+                return False
+        return True
 
     def addStepCount(self, steps):
 
@@ -240,6 +253,7 @@ class CityModel(Model):
                 continue
 
             if lines[self.height - y - 1][x] == direction["expected"]:
+                self.TLDirections[cur] = CityModel.mapData[direction["expected"]]
                 return direction["expected"]
                
 
