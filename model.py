@@ -27,61 +27,6 @@ class CityModel(Model):
         "D" : "Destination"
     }
 
-    checkData = {
-        ">": {
-            "infront": {
-                "pos": (1,0),
-                "expected": ">"
-                },
-            "sides": [
-                {"pos": (0,-1),
-                "expected": "^"
-                }, 
-                {"pos": (0,1),
-                "expected": "v"
-                }, 
-        ]},
-        "^": {
-            "infront": {
-                "pos": (0,-1),
-                "expected": "^"
-                },
-            "sides": [
-                {"pos": (1,0),
-                "expected": ">"
-                }, 
-                {"pos": (-1,0),
-                "expected": "<"
-                }, 
-        ]},
-        "<": {
-            "infront": {
-                "pos": (-1,0),
-                "expected": "<"
-                },
-            "sides":[
-                {"pos": (0,-1),
-                "expected": "^"
-                }, 
-                {"pos": (0,1),
-                "expected": "v"
-                }, 
-        ]},
-         "v":{
-            "infront": {
-                "pos": (0,1),
-                "expected": "v"
-                },
-            "sides": [
-                {"pos": (-1,0),
-                "expected": "<"
-                }, 
-                {"pos": (1,0),
-                "expected": ">"
-                }, 
-        ]},
-    }
-
     trafficLightDirection = [
         {
             "pos": (1,0),
@@ -249,28 +194,14 @@ class CityModel(Model):
                     self.grid.place_agent(agent, (c, self.height - r - 1))
                     self.destinations.append((c, self.height - r - 1))
 
-        # print(self.destinations)
-
-        # pos = (1,9)
-        # car = Car(1, self, pos) 
-        # self.schedule.add(car)
-        # self.grid.place_agent(car, pos)
-
-        # self.num_agents = N
         self.running = True
 
     def step(self):
         '''Advance the model by one step.'''
         # pprint.pprint(self.memo)
 
-        
-        # for pos in self.starting_positions:
-        #     val = self.random.randrange(100)
-        #     if val < self.density * 100 and self.grid.is_cell_empty(pos):
-        #         car = Car(self.unique_id, self, pos) 
-        #         self.unique_id += 1
-        #         self.schedule.add(car)
-        #         self.grid.place_agent(car, pos)
+        self.schedule.step()
+        self.datacollector.collect(self)
 
         if self.schedule.steps % 5 == 0:
             for pos in self.starting_positions:
@@ -280,8 +211,7 @@ class CityModel(Model):
                 self.grid.place_agent(car, pos)
                 
 
-        self.schedule.step()
-        self.datacollector.collect(self)
+       
         # with open("data.json", "w") as json_file:
         #     json.dump(self.memo, json_file, indent=4)
 

@@ -30,6 +30,7 @@ class Car(Agent):
         self.routeIndex = 0
         self.model.activeCars += 1
         self.stepCount = 0
+        self.direction = ""
        
 
     def GetRoute(self, start):
@@ -71,24 +72,23 @@ class Car(Agent):
             
     
     def canChangeLane(self):
-        direction = (self.route[self.routeIndex][0] - self.position[0], self.route[self.routeIndex][1]- self.position[1])
 
-        if direction in Car.possibleLaneChange:
-            relatives_directions = Car.possibleLaneChange[direction]
+        if self.direction in Car.possibleLaneChange:
+            relatives_directions = Car.possibleLaneChange[self.direction]
         else:
             return False
 
         for cell in relatives_directions:
             to_move = (self.position[0] + cell[0], self.position[1] + cell[1])
             if to_move[0] >= 0 and to_move[0] < self.model.width and to_move[1] >= 0 and to_move[1] < self.model.height  and self.model.grid.is_cell_empty(to_move):
-                self.ChangeRoute(direction, to_move)
+                self.ChangeRoute(to_move)
                 # print(self.route)
                 return True
        
         return False
 
        
-    def ChangeRoute(self, direction, next_move):
+    def ChangeRoute(self,  next_move):
 
         self.route = [next_move] + self.GetRoute(next_move)
         self.routeIndex = 0
@@ -109,6 +109,7 @@ class Car(Agent):
         
 
         next_move = self.route[self.routeIndex]
+        self.direction = (self.route[self.routeIndex][0] - self.position[0], self.route[self.routeIndex][1]- self.position[1])
         
         canMove = True
 
