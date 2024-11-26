@@ -18,26 +18,34 @@ function parseOBJ(objString) {
     const positions = [];
     const normals = [];
     const indices = [];
-    const colors = [];
+
+    const positionData = [];
+    const normalData = [];
 
     const lines = objString.split("\n");
-
-    // Definir un color predeterminado (blanco, por ejemplo)
-    const defaultColor = [0.5, 0.0, 0.5]; // Color blanco RGB
 
     for (const line of lines) {
         const parts = line.trim().split(/\s+/);
         const type = parts[0];
 
-        if (type === "v") { // Vértices
-            positions.push(...parts.slice(1).map(Number));
-            colors.push(...defaultColor); // Asignar color predeterminado a cada vértice
-        } else if (type === "vn") { // Normales
-            normals.push(...parts.slice(1).map(Number));
-        } else if (type === "f") { // Caras
-            for (const vertex of parts.slice(1)) {
-                const vertexIndex = parseInt(vertex.split("/")[0], 10) - 1; // Solo índice de posición
-                indices.push(vertexIndex);
+        if (type === "v") { // Vertex positions
+            positionData.push(parts.slice(1).map(Number));
+        } else if (type === "vn") { // Vertex normals
+            normalData.push(parts.slice(1).map(Number));
+        } else if (type === "f") { // Faces
+            const faceVertices = parts.slice(1);
+            for (const vertex of faceVertices) {
+                const [vIndexStr, vtIndexStr, vnIndexStr] = vertex.split('/');
+
+                // Parse indices (subtract 1 because OBJ indices start at 1)
+                const vIndex = parseInt(vIndexStr, 10) - 1;
+                const vnIndex = parseInt(vnIndexStr, 10) - 1;
+
+                positions.push(...positionData[vIndex]);
+                normals.push(...normalData[vnIndex]);
+
+                // Since we're expanding the vertices, indices are sequential
+                indices.push(indices.length);
             }
         }
     }
@@ -50,10 +58,6 @@ function parseOBJ(objString) {
         a_normal: {
             numComponents: 3,
             data: normals
-        },
-        a_color: {
-            numComponents: 3,
-            data: colors
         },
         indices: indices
     };
@@ -81,6 +85,8 @@ const trafficLights = []
 // Initialize WebGL-related variables
 let gl, programInfo, agentArrays, buildingArrays, trafficLightArrays, agentsBufferInfo, buildingsBufferInfo, trafficLightsBufferInfo, agentsVao, buildingsVao, trafficLightsVao, gridBufferInfo, gridVao;
 
+let lightBufferInfo, lightVao;
+
 // Define the camera position
 let cameraPosition = { x: 0, y: 50, z: 0.01 };
 
@@ -95,9 +101,9 @@ const settings = {
         z: 0.01,
     },
     lightPosition: {
-        x: 10,
-        y: 10,
-        z: 10,
+        x: 0,
+        y: 30,
+        z: 0,
     },
     ambientLightColor: [0.5, 0.5, 0.5, 1.0],
     diffuseLightColor: [0.5, 0.5, 0.5, 1.0],
@@ -106,9 +112,9 @@ const settings = {
 
 // Define model properties
 const modelProperties = {
-    ambientColor: [0.3, 0.6, 0.6, 1.0],
-    diffuseColor: [0.3, 0.6, 0.6, 1.0],
-    specularColor: [0.3, 0.6, 0.6, 1.0],
+    ambientColor: [0.8, 0.8, 0.8, 1.0],  // Color gris claro
+    diffuseColor: [0.8, 0.8, 0.8, 1.0],  // Color gris claro
+    specularColor: [0.8, 0.8, 0.8, 1.0],  // Color gris claro,
     shininess: 60.0,
 };
 
@@ -126,6 +132,12 @@ const data = {
     height: 25
 };
 
+function createLightRepresentation() {
+    // Crear una esfera pequeña para representar la luz
+    lightBufferInfo = twgl.primitives.createSphereBufferInfo(gl, 0.5, 12, 6);
+    lightVao = twgl.createVAOFromBufferInfo(gl, programInfo, lightBufferInfo);
+}
+
 // Main function to initialize and run the application
 async function main() {
     const canvas = document.querySelector('canvas');
@@ -133,6 +145,8 @@ async function main() {
 
     // Create the program information using the vertex and fragment shaders
     programInfo = twgl.createProgramInfo(gl, [vsGLSL, fsGLSL]);
+
+    createLightRepresentation();
 
     // Generate the agent and obstacle data
     agentArrays = [];
@@ -163,7 +177,7 @@ async function main() {
     buildingsBufferInfo = twgl.createBufferInfoFromArrays(gl, buildingArrays);
     buildingsVao = twgl.createVAOFromBufferInfo(gl, programInfo, buildingsBufferInfo);
 
-    await parseOBJFromFile("./light.obj").then(async (parsedObjArrays) => {
+    await parseOBJFromFile("./traffic_light.obj").then(async (parsedObjArrays) => {
         trafficLightArrays = parsedObjArrays;
     }).catch(error => console.error('Error loading OBJ file:', error));;
 
@@ -255,13 +269,10 @@ async function initAgentsModel() {
         if (response.ok) {
             // Parse the response as JSON and log the message
             let result = await response.json()
-            console.log(result.message)
 
             // Actualizar data.width y data.height con los valores recibidos del servidor
             data.width = result.width;
             data.height = result.height;
-
-            console.log(`Grid dimensions updated: width=${data.width}, height=${data.height}`);
         }
 
     } catch (error) {
@@ -279,7 +290,6 @@ async function getAgents() {
 
         if (response.ok) {
             let result = await response.json();
-            console.log(result);
 
             // Crear un mapa de los IDs de los nuevos agentes
             const newAgentIds = result.positions.map(agent => agent.id);
@@ -291,14 +301,14 @@ async function getAgents() {
                     // Actualizar posición
                     existingAgent.position = [
                         agentData.x + 0.5,
-                        agentData.y - 0.5,
+                        agentData.y - 1,
                         data.height - agentData.z - 0.5
                     ];
                 } else {
                     // Agregar nuevo agente
                     const newAgent = new Object3D(
                         agentData.id,
-                        [agentData.x - 0.5, agentData.y - 0.5, data.height - agentData.z - 0.5],
+                        [agentData.x - 0.5, agentData.y - 1, data.height - agentData.z - 0.5],
                         [0, 0, 0],
                         [0.5, 0.5, 0.5]
                     );
@@ -329,12 +339,11 @@ async function getBuildings() {
             for (const building of result.positions) {
                 const newBuilding = new Object3D(
                     building.id,
-                    [building.x + 0.5, building.y, data.height - building.z - 0.5],
+                    [building.x + 0.5, building.y - 1, data.height - building.z - 0.5],
                     [0, 0, 0]
                 );
                 buildings.push(newBuilding)
             }
-            console.log("Buildings:", buildings)
         }
 
     } catch (error) {
@@ -352,12 +361,12 @@ async function getTrafficLights() {
             for (const light of result.positions) {
                 const newLight = new Object3D(
                     light.id,
-                    [light.x - 0.5, light.y - 0.5, data.height - light.z - 0.5],
-                    [0, 1.5, 0]
+                    [light.x + 0.5, light.y - 0.5, data.height - light.z - 0.5],
+                    [0, 0, 0],
+                    [0.2, 0.2, 0.2]
                 );
                 trafficLights.push(newLight)
             }
-            console.log("Traffic Lights:", trafficLights)
         }
 
     } catch (error) {
@@ -380,7 +389,6 @@ async function update() {
             await getBuildings()
             await getTrafficLights()
             // Log a message indicating that the agents have been updated
-            console.log("Updated agents")
         }
 
     } catch (error) {
@@ -432,6 +440,8 @@ async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildings
     // Set up the view-projection matrix
     const viewProjectionMatrix = setupWorldView(gl);
 
+    drawLight(viewProjectionMatrix);
+
     // Set the distance for rendering
     const distance = 1
 
@@ -441,7 +451,7 @@ async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildings
     // Draw the buildings
     drawBuildings(distance, buildingsVao, buildingsBufferInfo, viewProjectionMatrix)
 
-    // drawTrafficLights(distance, trafficLightsVao, trafficLightsBufferInfo, viewProjectionMatrix)
+    drawTrafficLights(distance, trafficLightsVao, trafficLightsBufferInfo, viewProjectionMatrix)
 
     drawGrid(viewProjectionMatrix);
 
@@ -450,13 +460,42 @@ async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildings
     frameCount++
 
     // Update the scene every 30 frames
-    if (frameCount % 30 == 0) {
+    if (frameCount % 3 == 0) {
         frameCount = 0
         await update()
     }
 
     // Request the next frame
     requestAnimationFrame(() => drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo));
+}
+
+function drawLight(viewProjectionMatrix) {
+    gl.bindVertexArray(lightVao);
+
+    // Matriz de mundo para la luz
+    let world = twgl.m4.identity();
+    world = twgl.m4.translate(world, [settings.lightPosition.x, settings.lightPosition.y, settings.lightPosition.z]);
+    world = twgl.m4.scale(world, [1, 1, 1]); // Escalar si es necesario
+
+    // Calcular las matrices requeridas
+    let worldViewProjection = twgl.m4.multiply(viewProjectionMatrix, world);
+    let u_worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
+
+    // Uniformes del modelo para la luz
+    let modelUniforms = {
+        u_world: world,
+        u_worldInverseTransform: u_worldInverseTransform,
+        u_worldViewProjection: worldViewProjection,
+        u_ambientColor: [1.0, 1.0, 0.0, 1.0],  // Color amarillo brillante
+        u_diffuseColor: [1.0, 1.0, 0.0, 1.0],
+        u_specularColor: [1.0, 1.0, 0.0, 1.0],
+        u_shininess: 100.0,
+    };
+
+    twgl.setUniforms(programInfo, modelUniforms);
+
+    // Dibujar la esfera de la luz
+    twgl.drawBufferInfo(gl, lightBufferInfo);
 }
 
 /*
@@ -492,9 +531,9 @@ function drawAgents(distance, agentsVao, agentsBufferInfo, viewProjectionMatrix)
             u_world: world,
             u_worldInverseTransform: u_worldInverseTransform,
             u_worldViewProjection: worldViewProjection,
-            u_ambientColor: modelProperties.ambientColor,
-            u_diffuseColor: modelProperties.diffuseColor,
-            u_specularColor: modelProperties.specularColor,
+            u_ambientColor: [0.3, 0.6, 0.6, 1.0],
+            u_diffuseColor: [0.3, 0.6, 0.6, 1.0],
+            u_specularColor: [0.3, 0.6, 0.6, 1.0],
             u_shininess: modelProperties.shininess,
         };
 
@@ -566,9 +605,9 @@ function drawTrafficLights(distance, trafficLightsVao, trafficLightsBufferInfo, 
             u_world: world,
             u_worldInverseTransform: u_worldInverseTransform,
             u_worldViewProjection: worldViewProjection,
-            u_ambientColor: modelProperties.ambientColor,
-            u_diffuseColor: modelProperties.diffuseColor,
-            u_specularColor: modelProperties.specularColor,
+            u_ambientColor: [0.1, 0.1, 0.1, 1.0],
+            u_diffuseColor: [0.1, 0.1, 0.1, 1.0],
+            u_specularColor: [0.1, 0.1, 0.1, 1.0],
             u_shininess: modelProperties.shininess,
         };
 
