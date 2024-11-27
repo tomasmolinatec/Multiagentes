@@ -63,13 +63,29 @@ function parseOBJ(objString) {
     };
 }
 
+function getRotationAngle(direction) {
+    switch (direction) {
+        case 'up':
+            return 0;  // Facing along positive Z-axis
+        case 'down':
+            return Math.PI;  // Facing along negative Z-axis
+        case 'right':
+            return -Math.PI / 2;  // Facing along negative X-axis
+        case 'left':
+            return Math.PI / 2;  // Facing along positive X-axis
+        default:
+            return 0;  // Default to 'up' if direction is undefined
+    }
+}
+
 // Define the Object3D class to represent 3D objects
 class Object3D {
-    constructor(id, position = [0, 0, 0], rotation = [0, 0, 0], scale = [1, 1, 1]) {
+    constructor(id, position = [0, 0, 0], rotation = [0, 0, 0], scale = [1, 1, 1], direction = "up") {
         this.id = id;
         this.position = position;
         this.rotation = rotation;
         this.scale = scale;
+        this.direction = direction;
         this.matrix = twgl.m4.create();
     }
 }
@@ -83,7 +99,7 @@ const buildings = []
 const trafficLights = []
 
 // Initialize WebGL-related variables
-let gl, programInfo, agentArrays, buildingArrays, trafficLightArrays, agentsBufferInfo, buildingsBufferInfo, trafficLightsBufferInfo, agentsVao, buildingsVao, trafficLightsVao, gridBufferInfo, gridVao;
+let gl, programInfo, agentArrays, buildingArrays, trafficLightArrays, agentsBufferInfo, buildingsBufferInfo, trafficLightsBufferInfo, agentsVao, buildingsVao, trafficLightsVao, gridBufferInfo, gridVao, roadLinesBufferInfo, roadLinesVao;
 
 let lightBufferInfo, lightVao;
 
@@ -159,9 +175,13 @@ async function main() {
     // Initialize the agents model
     await initAgentsModel();
 
-    const gridArrays = createGridLines(data.width, data.height);
+    const gridArrays = createGridPlane(data.width, data.height);
     gridBufferInfo = twgl.createBufferInfoFromArrays(gl, gridArrays);
     gridVao = twgl.createVAOFromBufferInfo(gl, programInfo, gridBufferInfo);
+
+    const roadLinesArrays = createRoadLines(data.width, data.height);
+    roadLinesBufferInfo = twgl.createBufferInfoFromArrays(gl, roadLinesArrays);
+    roadLinesVao = twgl.createVAOFromBufferInfo(gl, programInfo, roadLinesBufferInfo);
 
     await parseOBJFromFile("./car_red.obj").then(async (parsedObjArrays) => {
         agentArrays = parsedObjArrays;
@@ -193,44 +213,106 @@ async function main() {
     await drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo);
 }
 
-function createGridLines(width, height) {
+function createGridPlane(width, height) {
     const positions = [];
     const normals = [];
+    const indices = [];
 
-    // Normal hacia arriba para todas las líneas del grid
+    // Normal hacia arriba para todas las caras
     const normal = [0, 1, 0];
 
-    // Líneas paralelas al eje Z (verticales en XZ)
-    for (let x = 0; x <= width; x++) {
-        positions.push(
-            x, 0, 0,
-            x, 0, height
-        );
-        normals.push(...normal, ...normal);
-    }
+    let index = 0;
 
-    // Líneas paralelas al eje X (horizontales en XZ)
-    for (let z = 0; z <= height; z++) {
-        positions.push(
-            0, 0, z,
-            width, 0, z
-        );
-        normals.push(...normal, ...normal);
+    // Crear los cuadrados (celdas) del grid
+    for (let x = 0; x < width; x++) {
+        for (let z = 0; z < height; z++) {
+            // Vértices de cada cuadrado
+            positions.push(
+                x, 0, z,
+                x + 1, 0, z,
+                x + 1, 0, z + 1,
+                x, 0, z + 1
+            );
+
+            // Normales para cada vértice
+            normals.push(...normal, ...normal, ...normal, ...normal);
+
+            // Índices para dibujar los dos triángulos que forman el cuadrado
+            indices.push(
+                index, index + 1, index + 2,
+                index, index + 2, index + 3
+            );
+
+            index += 4;
+        }
     }
 
     return {
         a_position: { numComponents: 3, data: positions },
         a_normal: { numComponents: 3, data: normals },
+        indices: indices
     };
 }
 
+function createRoadLines(width, height) {
+    const positions = [];
+    const normals = [];
+    const indices = [];
+
+    const normal = [0, 1, 0];
+    let index = 0;
+
+    // Ajuste: Dibujar líneas verticales en posiciones enteras
+    for (let x = 0; x <= width; x++) {
+        positions.push(
+            x - 0.05, 0.1, 0,
+            x + 0.05, 0.1, 0,
+            x + 0.05, 0.1, height,
+            x - 0.05, 0.1, height
+        );
+
+        normals.push(...normal, ...normal, ...normal, ...normal);
+
+        indices.push(
+            index, index + 1, index + 2,
+            index, index + 2, index + 3
+        );
+
+        index += 4;
+    }
+
+    // Ajuste: Dibujar líneas horizontales en posiciones enteras
+    for (let z = 0; z <= height; z++) {
+        positions.push(
+            0, 0.01, z - 0.05,
+            width, 0.1, z - 0.05,
+            width, 0.1, z + 0.05,
+            0, 0.1, z + 0.05
+        );
+
+        normals.push(...normal, ...normal, ...normal, ...normal);
+
+        indices.push(
+            index, index + 1, index + 2,
+            index, index + 2, index + 3
+        );
+
+        index += 4;
+    }
+
+    return {
+        a_position: { numComponents: 3, data: positions },
+        a_normal: { numComponents: 3, data: normals },
+        indices: indices
+    };
+}
 
 function drawGrid(viewProjectionMatrix) {
     gl.bindVertexArray(gridVao);
 
     // Matriz de mundo para el grid
     let world = twgl.m4.identity();
-    // Si es necesario, puedes aplicar transformaciones al grid aquí
+    // Puedes aplicar transformaciones al grid si es necesario
 
     // Matrices requeridas por los shaders
     let worldViewProjection = twgl.m4.multiply(viewProjectionMatrix, world);
@@ -241,16 +323,43 @@ function drawGrid(viewProjectionMatrix) {
         u_world: world,
         u_worldInverseTransform: u_worldInverseTransform,
         u_worldViewProjection: worldViewProjection,
-        u_ambientColor: gridProperties.ambientColor,
-        u_diffuseColor: gridProperties.diffuseColor,
-        u_specularColor: gridProperties.specularColor,
-        u_shininess: gridProperties.shininess,
+        u_ambientColor: [0.2, 0.2, 0.2, 1.0],  // Color negro para las calles
+        u_diffuseColor: [0.2, 0.2, 0.2, 1.0],
+        u_specularColor: [0.2, 0.2, 0.2, 1.0],
+        u_shininess: 1.0,
     };
 
     twgl.setUniforms(programInfo, modelUniforms);
 
     // Dibujar el grid
-    twgl.drawBufferInfo(gl, gridBufferInfo, gl.LINES);
+    twgl.drawBufferInfo(gl, gridBufferInfo, gl.TRIANGLES);
+}
+
+function drawRoadLines(viewProjectionMatrix) {
+    gl.bindVertexArray(roadLinesVao);
+
+    // Matriz de mundo para las líneas
+    let world = twgl.m4.identity();
+
+    // Matrices requeridas por los shaders
+    let worldViewProjection = twgl.m4.multiply(viewProjectionMatrix, world);
+    let u_worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
+
+    // Uniforms del modelo
+    let modelUniforms = {
+        u_world: world,
+        u_worldInverseTransform: u_worldInverseTransform,
+        u_worldViewProjection: worldViewProjection,
+        u_ambientColor: [1.0, 1.0, 1.0, 1.0],  // Color blanco para las líneas
+        u_diffuseColor: [1.0, 1.0, 1.0, 1.0],
+        u_specularColor: [1.0, 1.0, 1.0, 1.0],
+        u_shininess: 1.0,
+    };
+
+    twgl.setUniforms(programInfo, modelUniforms);
+
+    // Dibujar las líneas
+    twgl.drawBufferInfo(gl, roadLinesBufferInfo, gl.TRIANGLES);
 }
 
 /*
@@ -304,6 +413,7 @@ async function getAgents() {
                         agentData.y - 1,
                         data.height - agentData.z - 0.5
                     ];
+                    existingAgent.direction = agentData.direction;
                 } else {
                     // Agregar nuevo agente
                     const newAgent = new Object3D(
@@ -312,6 +422,7 @@ async function getAgents() {
                         [0, 0, 0],
                         [0.5, 0.5, 0.5]
                     );
+                    newAgent.direction = agentData.direction;
                     agents.push(newAgent);
                 }
             }
@@ -386,8 +497,6 @@ async function update() {
         if (response.ok) {
             // Retrieve the updated agent positions
             await getAgents()
-            await getBuildings()
-            await getTrafficLights()
             // Log a message indicating that the agents have been updated
         }
 
@@ -454,6 +563,7 @@ async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildings
     drawTrafficLights(distance, trafficLightsVao, trafficLightsBufferInfo, viewProjectionMatrix)
 
     drawGrid(viewProjectionMatrix);
+    drawRoadLines(viewProjectionMatrix);
 
 
     // Increment the frame count
@@ -515,9 +625,13 @@ function drawAgents(distance, agentsVao, agentsBufferInfo, viewProjectionMatrix)
         // Compute the world matrix
         let world = twgl.m4.identity();
         world = twgl.m4.translate(world, agent.position);
-        world = twgl.m4.rotateX(world, agent.rotation[0]);
-        world = twgl.m4.rotateY(world, agent.rotation[1]);
-        world = twgl.m4.rotateZ(world, agent.rotation[2]);
+
+        // Get rotation angle based on agent's direction
+        let rotationAngle = getRotationAngle(agent.direction);
+        // Rotate around Y-axis
+        world = twgl.m4.rotateY(world, rotationAngle);
+
+        // Apply scaling
         world = twgl.m4.scale(world, agent.scale);
 
         // Compute the worldViewProjection matrix
@@ -541,10 +655,8 @@ function drawAgents(distance, agentsVao, agentsBufferInfo, viewProjectionMatrix)
 
         // Draw the object
         twgl.drawBufferInfo(gl, agentsBufferInfo);
-
     }
 }
-
 function drawBuildings(distance, buildingsVao, buildingsBufferInfo, viewProjectionMatrix) {
     gl.bindVertexArray(buildingsVao);
 

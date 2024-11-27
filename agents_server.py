@@ -33,15 +33,10 @@ def initModel():
                 width = len(lines[0]) - 1
                 height = len(lines)
 
-            number_agents = int(request.json.get("NAgents"))
-            width = int(request.json.get("width"))
-            height = int(request.json.get("height"))
             currentStep = 0
 
             # Create the model using the parameters sent by the application
             randomModel = CityModel(width, height, lines, 100)
-            width = randomModel.width
-            height = randomModel.height
 
             # Return a message to saying that the model was created successfully
             return jsonify(
@@ -69,7 +64,13 @@ def getCars():
                 for a in cell_content:
                     if isinstance(a, Car):
                         carPositions.append(
-                            {"id": str(a.unique_id), "x": x, "y": 1, "z": y}
+                            {
+                                "id": str(a.unique_id),
+                                "x": x,
+                                "y": 1,
+                                "z": y,
+                                "direction": a.directionWritten,
+                            }
                         )
 
             return jsonify({"positions": carPositions})

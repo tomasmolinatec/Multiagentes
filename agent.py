@@ -3,20 +3,22 @@ from collections import deque
 import pprint
 import copy
 
+
 class Car(Agent):
-    
+
     possibleLaneChange = {
-        (0,1): [(-1,1), (1,1)],
-        (0,-1): [(-1,-1), (1,-1)],
-        (1,0): [(1,1), (1,-1)],
-        (-1,0): [(-1,1), (-1,-1)],
+        (0, 1): [(-1, 1), (1, 1)],
+        (0, -1): [(-1, -1), (1, -1)],
+        (1, 0): [(1, 1), (1, -1)],
+        (-1, 0): [(-1, 1), (-1, -1)],
     }
     directionsDecode = {
-         (0,1): "up",
-        (0,-1): "down",
-        (1,0): "right",
-        (-1,0): "left",
+        (0, 1): "up",
+        (0, -1): "down",
+        (1, 0): "right",
+        (-1, 0): "left",
     }
+
     def __init__(self, unique_id, model, pos):
         """
         Creates a new agent with a position and model.
@@ -26,9 +28,9 @@ class Car(Agent):
             pos: Position of the agent (tuple)
         """
         super().__init__(unique_id, model)  # Call the Agent constructor
-        
+
         self.originalPosition = pos  # Set position
-        self.position = pos 
+        self.position = pos
         self.timeStopped = 0
         self.destination = self.model.getRandomDest()
         # print("D:",self.destination)
@@ -37,8 +39,7 @@ class Car(Agent):
         self.model.activeCars += 1
         self.stepCount = 0
         self.direction = 0
-        self.directionWritten = ""
-       
+        self.directionWritten = "up"
 
     def GetRoute(self, start):
         """
@@ -59,15 +60,17 @@ class Car(Agent):
 
         # print("Didnt use memoization!")
         self.model.noMemoCount += 1
-        q  = deque([(start,[])])  # Cola para BFS con la posición actual y el camino recorrido
+        q = deque(
+            [(start, [])]
+        )  # Cola para BFS con la posición actual y el camino recorrido
         visited = {start}  # Mantiene registro de las celdas visitadas
 
         while q:
             cur, path = q.popleft()  # Toma el primer elemento de la cola
             if cur == self.destination:
-                self.model.memo[key] =  copy.deepcopy(path)
-                return path 
-            
+                self.model.memo[key] = copy.deepcopy(path)
+                return path
+
             if cur not in self.model.graph:
                 continue
             possible_moves = self.model.graph[cur]
@@ -75,9 +78,10 @@ class Car(Agent):
             for move in possible_moves:
                 if move not in visited:
                     visited.add(move)  # Marca la celda como visitada
-                    q.append((move, path + [move]))  # Añade la celda y el camino actualizado a la cola
-            
-    
+                    q.append(
+                        (move, path + [move])
+                    )  # Añade la celda y el camino actualizado a la cola
+
     def canChangeLane(self):
 
         if self.direction in Car.possibleLaneChange:
@@ -87,34 +91,38 @@ class Car(Agent):
 
         for cell in relatives_directions:
             to_move = (self.position[0] + cell[0], self.position[1] + cell[1])
-            if to_move[0] >= 0 and to_move[0] < self.model.width and to_move[1] >= 0 and to_move[1] < self.model.height  and self.isEmpty(to_move):
+            if (
+                to_move[0] >= 0
+                and to_move[0] < self.model.width
+                and to_move[1] >= 0
+                and to_move[1] < self.model.height
+                and self.isEmpty(to_move)
+            ):
                 self.ChangeRoute(to_move)
                 # print(self.route)
                 return True
-       
+
         return False
 
-    
     def isEmpty(self, pos):
         agents = self.model.grid.get_cell_list_contents([pos])
         # Define a set of agent classes that are considered "not empty"
         blocked_agents = {Car, Obstacle, Traffic_Light, Destination}
 
         # Check if any agent is of the blocked type
-        return not any(isinstance(a, agent_type) for a in agents for agent_type in blocked_agents)
+        return not any(
+            isinstance(a, agent_type) for a in agents for agent_type in blocked_agents
+        )
 
-    def ChangeRoute(self,  next_move):
+    def ChangeRoute(self, next_move):
 
         # print(next_move, self.GetRoute(next_move))
         self.route = [next_move] + self.GetRoute(next_move)
         self.routeIndex = 0
         # self.route[0] = next_mov
 
-
-
-
     def move(self):
-       
+
         if self.position == self.destination:
             # print("GOT THERE")
             self.model.grid.remove_agent(self)
@@ -122,15 +130,16 @@ class Car(Agent):
             self.model.activeCars -= 1
             self.model.addStepCount(self.stepCount)
             return
-        
 
         next_move = self.route[self.routeIndex]
 
-        self.direction = (next_move[0] - self.position[0], next_move[1]- self.position[1])
+        self.direction = (
+            next_move[0] - self.position[0],
+            next_move[1] - self.position[1],
+        )
         if self.direction in Car.directionsDecode:
-            self.directionWritten =  Car.directionsDecode[self.direction] 
+            self.directionWritten = Car.directionsDecode[self.direction]
 
-        
         canMove = True
 
 
@@ -142,7 +151,7 @@ class Car(Agent):
             if isinstance(agent, Car):
                 if len(self.route) > 0  and self.timeStopped >= 1 and self.canChangeLane() :
                     next_move = self.route[self.routeIndex]
-                else: 
+                else:
                     canMove = False
             
             
@@ -154,20 +163,19 @@ class Car(Agent):
         else:
             self.timeStopped += 1
 
-   
-
-
     def step(self):
-        """ 
+        """
         Determines the new direction it will take, and then moves
         """
         self.move()
         self.stepCount += 1
 
+
 class Traffic_Light(Agent):
     """
     Traffic light. Where the traffic lights are in the grid.
     """
+
     def __init__(self, unique_id, model, red, green, start):
         super().__init__(unique_id, model)
         """
@@ -186,7 +194,7 @@ class Traffic_Light(Agent):
         self.cur = start
 
     def step(self):
-        """ 
+        """
         To change the state (green or red) of the traffic light in case you consider the time to change of each traffic light.
         """
         self.cur += 1
@@ -199,36 +207,36 @@ class Traffic_Light(Agent):
                 self.cur = 0
                 self.go = False
 
-       
-
-        
-            
-        
 
 class Destination(Agent):
     """
     Destination agent. Where each car should go.
     """
+
     def __init__(self, unique_id, model):
         super().__init__(unique_id, model)
 
     def step(self):
         pass
+
 
 class Obstacle(Agent):
     """
     Obstacle agent. Just to add obstacles to the grid.
     """
+
     def __init__(self, unique_id, model):
         super().__init__(unique_id, model)
 
     def step(self):
         pass
 
+
 class Road(Agent):
     """
     Road agent. Determines where the cars can move, and in which direction.
     """
+
     def __init__(self, pos, model, direction):
         """
         Creates a new road.
@@ -237,7 +245,5 @@ class Road(Agent):
             model: Model reference for the agent
             direction: Direction where the cars can move
         """
-        super().__init__(pos,  model)
+        super().__init__(pos, model)
         self.direction = direction
-       
-
