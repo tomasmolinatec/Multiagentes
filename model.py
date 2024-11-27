@@ -87,8 +87,6 @@ class CityModel(Model):
                 lambda m, i=i: self.steps_distribution[i]
             )
 
-
-
         self.datacollector = mesa.DataCollector(
             self.steps_distribution_lambda
             | {
@@ -100,7 +98,7 @@ class CityModel(Model):
 
         # Goes through each character in the map file and creates the corresponding agent.
         self.starting_positions = [
-            (x, y) for x in [0, self.width - 1] for y in [0, self.height - 1]
+            (x, y) for x in [1, self.width - 1] for y in [1, self.height - 1]
         ]
 
         self.graph = {}
@@ -110,7 +108,13 @@ class CityModel(Model):
         for r, row in enumerate(lines):
             for c, col in enumerate(row):
                 if col in ["v", "^", ">", "<"]:
-                    agent = Road((c, self.height - r - 1), self, CityModel.mapData[col])
+                    agent = Road(
+                        self.unique_id,
+                        self,
+                        (c, self.height - r - 1),
+                        CityModel.mapData[col],
+                    )
+                    self.unique_id += 1
                     self.grid.place_agent(agent, (c, self.height - r - 1))
 
                     if not graphCreated:
@@ -140,7 +144,7 @@ class CityModel(Model):
                     )
                     self.grid.place_agent(agent, (c, self.height - r - 1))
                     self.schedule.add(agent)
-        
+
                 elif col == "#":
                     agent = Obstacle(f"ob_{r*self.width+c}", self)
                     self.grid.place_agent(agent, (c, self.height - r - 1))
@@ -149,7 +153,6 @@ class CityModel(Model):
                     agent = Destination(f"d_{r*self.width+c}", self)
                     self.grid.place_agent(agent, (c, self.height - r - 1))
                     self.destinations.append((c, self.height - r - 1))
-
 
         for pos, dir in self.TLDirections.items():
             TL = self.grid.get_cell_list_contents([pos])[0]
@@ -172,12 +175,12 @@ class CityModel(Model):
             added = False
             for pos in self.starting_positions:
                 if self.hasNoCars(pos):
-                    car = Car(self.unique_id, self, pos) 
+                    car = Car(self.unique_id, self, pos)
                     self.unique_id += 1
                     self.schedule.add(car)
                     self.grid.place_agent(car, pos)
                     added = True
-        
+
         if not added:
             print("stop")
             self.running = False
@@ -190,7 +193,7 @@ class CityModel(Model):
 
     def hasNoCars(self, pos):
         agents = self.grid.get_cell_list_contents(pos)
-        
+
         for a in agents:
             if isinstance(a, Car):
                 return False
