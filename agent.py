@@ -147,12 +147,13 @@ class Car(Agent):
             if isinstance(agent, Traffic_Light) and not agent.go:
                 canMove =  False
 
-        for agent in self.model.grid.get_cell_list_contents([next_move]):
-            if isinstance(agent, Car):
-                if len(self.route) > 0  and self.timeStopped >= 1 and self.canChangeLane() :
-                    next_move = self.route[self.routeIndex]
-                else:
-                    canMove = False
+        if canMove:
+            for agent in self.model.grid.get_cell_list_contents([next_move]):
+                if isinstance(agent, Car):
+                    if len(self.route) > 0  and self.timeStopped >= 1 and self.canChangeLane() :
+                        next_move = self.route[self.routeIndex]
+                    else:
+                        canMove = False
             
             
         if canMove:
