@@ -36,7 +36,7 @@ def agent_portrayal(agent):
 
     elif (isinstance(agent, Traffic_Light)):
         portrayal["Color"] = "red" if not agent.go else "green"
-        portrayal["Layer"] = 0
+        portrayal["Layer"] = 1
         portrayal["w"] = 0.8
         portrayal["h"] = 0.8
         portrayal["Shape"] = "rect"
@@ -51,7 +51,7 @@ def agent_portrayal(agent):
     if (isinstance(agent, Car)):
         portrayal["Color"] = "black"
         portrayal["Shape"] = "circle"
-        portrayal["Layer"] = 0
+        portrayal["Layer"] = 2
         portrayal["r"] = 0.8
         
     return portrayal
@@ -59,7 +59,7 @@ def agent_portrayal(agent):
 width = 0
 height = 0
 
-with open('./2022_base.txt') as baseFile:
+with open('./2023_base.txt') as baseFile:
     lines = baseFile.readlines()
     width = len(lines[0])-1
     height = len(lines)
