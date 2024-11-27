@@ -1,5 +1,5 @@
 from mesa import Model
-from mesa.time import RandomActivation
+from mesa.time import RandomActivation, BaseScheduler
 from mesa.space import MultiGrid
 from agent import *
 import json
@@ -73,7 +73,7 @@ class CityModel(Model):
         self.width = width
         self.height = height
         self.grid = MultiGrid(self.width, self.height, torus=False)
-        self.schedule = RandomActivation(self)
+        self.schedule = BaseScheduler(self)
         self.activeCars = 0
         self.memoCount = 0
         self.noMemoCount = 0
@@ -171,7 +171,7 @@ class CityModel(Model):
         self.datacollector.collect(self)
         added = True
 
-        if self.schedule.steps % 2 == 0:
+        if self.schedule.steps % 1 == 0:
             added = False
             for pos in self.starting_positions:
                 if self.hasNoCars(pos):
