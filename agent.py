@@ -186,7 +186,7 @@ class Traffic_Light(Agent):
             state: Whether the traffic light is green or red
             timeToChange: After how many step should the traffic light change color 
         """
-        self.direction = ""
+        self.direction = "up"
         self.red = red
         self.green = green
         self.total = red + green
@@ -237,13 +237,10 @@ class Road(Agent):
     Road agent. Determines where the cars can move, and in which direction.
     """
 
-    def __init__(self, pos, model, direction):
-        """
-        Creates a new road.
-        Args:
-            unique_id: The agent's ID
-            model: Model reference for the agent
-            direction: Direction where the cars can move
-        """
-        super().__init__(pos, model)
+    def __init__(self, unique_id, model, pos, direction):
+        super().__init__(unique_id, model)
+        self.pos = pos
         self.direction = direction
+
+    def step(self):
+        pass

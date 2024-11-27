@@ -5,7 +5,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS, cross_origin
 from model import CityModel
-from agent import Car, Traffic_Light, Obstacle
+from agent import Car, Traffic_Light, Obstacle, Road
 
 # Size of the board:
 number_agents = 10
@@ -28,7 +28,7 @@ def initModel():
 
     if request.method == "POST":
         try:
-            with open("./2022_base.txt") as baseFile:
+            with open("./2024_base.txt") as baseFile:
                 lines = baseFile.readlines()
                 width = len(lines[0]) - 1
                 height = len(lines)
@@ -112,13 +112,47 @@ def getTrafficLights():
                 for a in cell_content:
                     if isinstance(a, Traffic_Light):
                         trafficLightPositions.append(
-                            {"id": str(a.unique_id), "x": x, "y": 1, "z": y}
+                            {
+                                "id": str(a.unique_id),
+                                "x": x,
+                                "y": 1,
+                                "z": y,
+                                "direction": a.direction,
+                                "go": a.go,
+                            }
                         )
-
+            print(jsonify({"positions": trafficLightPositions}))
             return jsonify({"positions": trafficLightPositions})
         except Exception as e:
             print(e)
             return jsonify({"message": "Error with building positions"}), 500
+
+
+@app.route("/getRoads", methods=["GET"])
+@cross_origin()
+def getRoads():
+    global randomModel
+
+    if request.method == "GET":
+        try:
+            roadPositions = []
+            for cell_content, (x, y) in randomModel.grid.coord_iter():
+                for a in cell_content:
+                    if isinstance(a, Road):
+                        roadPositions.append(
+                            {
+                                "id": str(a.unique_id),
+                                "x": x,
+                                "y": 0,  # Suponiendo que las calles están en y=0
+                                "z": y,
+                                "direction": a.direction,
+                            }
+                        )
+
+            return jsonify({"positions": roadPositions})
+        except Exception as e:
+            print(e)
+            return jsonify({"message": "Error with the road positions"}), 500
 
 
 # This route will be used to update the model
@@ -128,13 +162,48 @@ def updateModel():
     global currentStep, randomModel
     if request.method == "GET":
         try:
-            # Update the model and return a message to WebGL saying that the model was updated successfully
+            # Avanzar el modelo un paso
             randomModel.step()
             currentStep += 1
+
+            # Obtener posiciones de los carros
+            carPositions = []
+            for cell_content, (x, y) in randomModel.grid.coord_iter():
+                for a in cell_content:
+                    if isinstance(a, Car):
+                        carPositions.append(
+                            {
+                                "id": str(a.unique_id),
+                                "x": x,
+                                "y": 1,
+                                "z": y,
+                                "direction": a.directionWritten,
+                            }
+                        )
+
+            # Obtener posiciones de los semáforos
+            trafficLightPositions = []
+            for cell_content, (x, y) in randomModel.grid.coord_iter():
+                for a in cell_content:
+                    if isinstance(a, Traffic_Light):
+                        trafficLightPositions.append(
+                            {
+                                "id": str(a.unique_id),
+                                "x": x,
+                                "y": 1,
+                                "z": y,
+                                "direction": a.direction,
+                                "go": a.go,
+                            }
+                        )
+
+            # Retornar ambas listas en la respuesta JSON
             return jsonify(
                 {
                     "message": f"Model updated to step {currentStep}.",
                     "currentStep": currentStep,
+                    "cars": carPositions,
+                    "trafficLights": trafficLightPositions,
                 }
             )
         except Exception as e:

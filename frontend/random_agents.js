@@ -78,15 +78,37 @@ function getRotationAngle(direction) {
     }
 }
 
+function oppositeDirection(direction) {
+    switch (direction) {
+        case 'up':
+            return 'down';
+        case 'down':
+            return 'up';
+        case 'left':
+            return 'right';
+        case 'right':
+            return 'left';
+        default:
+            return 'up';  // Valor por defecto si la dirección es indefinida
+    }
+}
+
 // Define the Object3D class to represent 3D objects
 class Object3D {
-    constructor(id, position = [0, 0, 0], rotation = [0, 0, 0], scale = [1, 1, 1], direction = "up") {
+    constructor(id, position = [0, 0, 0], rotation = [0, 0, 0], scale = [1, 1, 1], direction = "up", go = true, color = [1, 1, 1, 1]) {
         this.id = id;
-        this.position = position;
+        this.position = position; // Posición actual (interpolada)
+        this.initialPosition = position.slice(); // Posición inicial antes de la interpolación
+        this.targetPosition = position.slice(); // Posición objetivo para la interpolación
         this.rotation = rotation;
         this.scale = scale;
         this.direction = direction;
         this.matrix = twgl.m4.create();
+        this.progress = 1; // Inicialmente, sin interpolación pendiente
+        this.elapsedTime = 0;
+        this.interpolationDuration = 200;
+        this.go = go; // Duración de la interpolación en segundos
+        this.color = color;
     }
 }
 
@@ -97,11 +119,15 @@ const agent_server_uri = "http://localhost:8586/";
 const agents = [];
 const buildings = []
 const trafficLights = []
+const roads = []
 
 // Initialize WebGL-related variables
 let gl, programInfo, agentArrays, buildingArrays, trafficLightArrays, agentsBufferInfo, buildingsBufferInfo, trafficLightsBufferInfo, agentsVao, buildingsVao, trafficLightsVao, gridBufferInfo, gridVao, roadLinesBufferInfo, roadLinesVao;
 
+let roadBufferInfo, roadVao, lineBufferInfo, lineVao;
+
 let lightBufferInfo, lightVao;
+let lastRenderTime = 0;
 
 // Define the camera position
 let cameraPosition = { x: 0, y: 50, z: 0.01 };
@@ -144,8 +170,8 @@ const gridProperties = {
 // Define the data object
 const data = {
     NAgents: 3,
-    width: 24,
-    height: 25
+    width: 30,
+    height: 30
 };
 
 function createLightRepresentation() {
@@ -175,13 +201,27 @@ async function main() {
     // Initialize the agents model
     await initAgentsModel();
 
-    const gridArrays = createGridPlane(data.width, data.height);
-    gridBufferInfo = twgl.createBufferInfoFromArrays(gl, gridArrays);
-    gridVao = twgl.createVAOFromBufferInfo(gl, programInfo, gridBufferInfo);
+    // const gridArrays = createGridPlane(data.width, data.height);
+    // gridBufferInfo = twgl.createBufferInfoFromArrays(gl, gridArrays);
+    // gridVao = twgl.createVAOFromBufferInfo(gl, programInfo, gridBufferInfo);
 
-    const roadLinesArrays = createRoadLines(data.width, data.height);
-    roadLinesBufferInfo = twgl.createBufferInfoFromArrays(gl, roadLinesArrays);
-    roadLinesVao = twgl.createVAOFromBufferInfo(gl, programInfo, roadLinesBufferInfo);
+    // const roadLinesArrays = createRoadLines(data.width, data.height);
+    // roadLinesBufferInfo = twgl.createBufferInfoFromArrays(gl, roadLinesArrays);
+    // roadLinesVao = twgl.createVAOFromBufferInfo(gl, programInfo, roadLinesBufferInfo);
+
+    // Get the agents and obstacles
+    await getAgents();
+    await getBuildings();
+    await getTrafficLights();
+    await getRoads();
+
+    const roadGeometry = createRoadGeometry(roads);
+
+    roadBufferInfo = twgl.createBufferInfoFromArrays(gl, roadGeometry.roadPositions);
+    roadVao = twgl.createVAOFromBufferInfo(gl, programInfo, roadBufferInfo);
+
+    lineBufferInfo = twgl.createBufferInfoFromArrays(gl, roadGeometry.linePositions);
+    lineVao = twgl.createVAOFromBufferInfo(gl, programInfo, lineBufferInfo);
 
     await parseOBJFromFile("./car_red.obj").then(async (parsedObjArrays) => {
         agentArrays = parsedObjArrays;
@@ -204,126 +244,137 @@ async function main() {
     trafficLightsBufferInfo = twgl.createBufferInfoFromArrays(gl, trafficLightArrays);
     trafficLightsVao = twgl.createVAOFromBufferInfo(gl, programInfo, trafficLightsBufferInfo);
 
-    // Get the agents and obstacles
-    await getAgents();
-    await getBuildings();
-    await getTrafficLights();
+
+
+    lastRenderTime = performance.now()
 
     // Draw the scene
     await drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo);
 }
 
-function createGridPlane(width, height) {
+function createRoadGeometry(roads) {
     const positions = [];
     const normals = [];
     const indices = [];
 
-    // Normal hacia arriba para todas las caras
-    const normal = [0, 1, 0];
+    const linePositions = [];
+    const lineNormals = [];
+    const lineIndices = [];
 
     let index = 0;
+    let lineIndex = 0;
 
-    // Crear los cuadrados (celdas) del grid
-    for (let x = 0; x < width; x++) {
-        for (let z = 0; z < height; z++) {
-            // Vértices de cada cuadrado
-            positions.push(
-                x, 0, z,
-                x + 1, 0, z,
-                x + 1, 0, z + 1,
-                x, 0, z + 1
+    const normal = [0, 1, 0];  // Normal hacia arriba para todas las caras
+    const laneOffset = 0.01;   // Desplazamiento desde el borde de la celda
+    const laneWidth = 0.05;    // Ancho de la línea del carril
+
+    for (const road of roads) {
+        const x = road.position[0];
+        const z = road.position[2];  // Suponiendo que y es arriba, z es profundidad
+
+        // Crear el quad para la celda de la carretera
+        positions.push(
+            x, 0, z,
+            x + 1, 0, z,
+            x + 1, 0, z + 1,
+            x, 0, z + 1
+        );
+        normals.push(...normal, ...normal, ...normal, ...normal);
+        indices.push(
+            index, index + 1, index + 2,
+            index, index + 2, index + 3
+        );
+        index += 4;
+
+        if (road.direction == "up" || road.direction == "down") {
+            // Dibujar líneas en los bordes izquierdo y derecho para calles verticales
+            // Línea izquierda
+            linePositions.push(
+                x + laneOffset - laneWidth / 2, 0.01, z,
+                x + laneOffset + laneWidth / 2, 0.01, z,
+                x + laneOffset + laneWidth / 2, 0.01, z + 1,
+                x + laneOffset - laneWidth / 2, 0.01, z + 1,
             );
-
-            // Normales para cada vértice
-            normals.push(...normal, ...normal, ...normal, ...normal);
-
-            // Índices para dibujar los dos triángulos que forman el cuadrado
-            indices.push(
-                index, index + 1, index + 2,
-                index, index + 2, index + 3
+            lineNormals.push(...normal, ...normal, ...normal, ...normal);
+            lineIndices.push(
+                lineIndex, lineIndex + 1, lineIndex + 2,
+                lineIndex, lineIndex + 2, lineIndex + 3
             );
+            lineIndex += 4;
 
-            index += 4;
+            // Línea derecha
+            linePositions.push(
+                x + 1 - laneOffset - laneWidth / 2, 0.01, z,
+                x + 1 - laneOffset + laneWidth / 2, 0.01, z,
+                x + 1 - laneOffset + laneWidth / 2, 0.01, z + 1,
+                x + 1 - laneOffset - laneWidth / 2, 0.01, z + 1,
+            );
+            lineNormals.push(...normal, ...normal, ...normal, ...normal);
+            lineIndices.push(
+                lineIndex, lineIndex + 1, lineIndex + 2,
+                lineIndex, lineIndex + 2, lineIndex + 3
+            );
+            lineIndex += 4;
+
+        } else if (road.direction == "left" || road.direction == "right") {
+            // Dibujar líneas en los bordes superior e inferior para calles horizontales
+            // Línea inferior
+            linePositions.push(
+                x, 0.01, z + laneOffset - laneWidth / 2,
+                x + 1, 0.01, z + laneOffset - laneWidth / 2,
+                x + 1, 0.01, z + laneOffset + laneWidth / 2,
+                x, 0.01, z + laneOffset + laneWidth / 2,
+            );
+            lineNormals.push(...normal, ...normal, ...normal, ...normal);
+            lineIndices.push(
+                lineIndex, lineIndex + 1, lineIndex + 2,
+                lineIndex, lineIndex + 2, lineIndex + 3
+            );
+            lineIndex += 4;
+
+            // Línea superior
+            linePositions.push(
+                x, 0.01, z + 1 - laneOffset - laneWidth / 2,
+                x + 1, 0.01, z + 1 - laneOffset - laneWidth / 2,
+                x + 1, 0.01, z + 1 - laneOffset + laneWidth / 2,
+                x, 0.01, z + 1 - laneOffset + laneWidth / 2,
+            );
+            lineNormals.push(...normal, ...normal, ...normal, ...normal);
+            lineIndices.push(
+                lineIndex, lineIndex + 1, lineIndex + 2,
+                lineIndex, lineIndex + 2, lineIndex + 3
+            );
+            lineIndex += 4;
         }
     }
 
     return {
-        a_position: { numComponents: 3, data: positions },
-        a_normal: { numComponents: 3, data: normals },
-        indices: indices
+        roadPositions: {
+            a_position: { numComponents: 3, data: positions },
+            a_normal: { numComponents: 3, data: normals },
+            indices: indices
+        },
+        linePositions: {
+            a_position: { numComponents: 3, data: linePositions },
+            a_normal: { numComponents: 3, data: lineNormals },
+            indices: lineIndices
+        }
     };
 }
 
-function createRoadLines(width, height) {
-    const positions = [];
-    const normals = [];
-    const indices = [];
+function drawRoads(viewProjectionMatrix) {
+    gl.bindVertexArray(roadVao);
 
-    const normal = [0, 1, 0];
-    let index = 0;
-
-    // Ajuste: Dibujar líneas verticales en posiciones enteras
-    for (let x = 0; x <= width; x++) {
-        positions.push(
-            x - 0.05, 0.1, 0,
-            x + 0.05, 0.1, 0,
-            x + 0.05, 0.1, height,
-            x - 0.05, 0.1, height
-        );
-
-        normals.push(...normal, ...normal, ...normal, ...normal);
-
-        indices.push(
-            index, index + 1, index + 2,
-            index, index + 2, index + 3
-        );
-
-        index += 4;
-    }
-
-    // Ajuste: Dibujar líneas horizontales en posiciones enteras
-    for (let z = 0; z <= height; z++) {
-        positions.push(
-            0, 0.01, z - 0.05,
-            width, 0.1, z - 0.05,
-            width, 0.1, z + 0.05,
-            0, 0.1, z + 0.05
-        );
-
-        normals.push(...normal, ...normal, ...normal, ...normal);
-
-        indices.push(
-            index, index + 1, index + 2,
-            index, index + 2, index + 3
-        );
-
-        index += 4;
-    }
-
-    return {
-        a_position: { numComponents: 3, data: positions },
-        a_normal: { numComponents: 3, data: normals },
-        indices: indices
-    };
-}
-
-function drawGrid(viewProjectionMatrix) {
-    gl.bindVertexArray(gridVao);
-
-    // Matriz de mundo para el grid
     let world = twgl.m4.identity();
-    // Puedes aplicar transformaciones al grid si es necesario
 
-    // Matrices requeridas por los shaders
     let worldViewProjection = twgl.m4.multiply(viewProjectionMatrix, world);
     let u_worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
 
-    // Uniforms del modelo
     let modelUniforms = {
         u_world: world,
         u_worldInverseTransform: u_worldInverseTransform,
         u_worldViewProjection: worldViewProjection,
-        u_ambientColor: [0.2, 0.2, 0.2, 1.0],  // Color negro para las calles
+        u_ambientColor: [0.2, 0.2, 0.2, 1.0],  // Color oscuro para el pavimento
         u_diffuseColor: [0.2, 0.2, 0.2, 1.0],
         u_specularColor: [0.2, 0.2, 0.2, 1.0],
         u_shininess: 1.0,
@@ -331,21 +382,17 @@ function drawGrid(viewProjectionMatrix) {
 
     twgl.setUniforms(programInfo, modelUniforms);
 
-    // Dibujar el grid
-    twgl.drawBufferInfo(gl, gridBufferInfo, gl.TRIANGLES);
+    twgl.drawBufferInfo(gl, roadBufferInfo, gl.TRIANGLES);
 }
 
-function drawRoadLines(viewProjectionMatrix) {
-    gl.bindVertexArray(roadLinesVao);
+function drawLines(viewProjectionMatrix) {
+    gl.bindVertexArray(lineVao);
 
-    // Matriz de mundo para las líneas
     let world = twgl.m4.identity();
 
-    // Matrices requeridas por los shaders
     let worldViewProjection = twgl.m4.multiply(viewProjectionMatrix, world);
     let u_worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
 
-    // Uniforms del modelo
     let modelUniforms = {
         u_world: world,
         u_worldInverseTransform: u_worldInverseTransform,
@@ -358,8 +405,7 @@ function drawRoadLines(viewProjectionMatrix) {
 
     twgl.setUniforms(programInfo, modelUniforms);
 
-    // Dibujar las líneas
-    twgl.drawBufferInfo(gl, roadLinesBufferInfo, gl.TRIANGLES);
+    twgl.drawBufferInfo(gl, lineBufferInfo, gl.TRIANGLES);
 }
 
 /*
@@ -400,25 +446,28 @@ async function getAgents() {
         if (response.ok) {
             let result = await response.json();
 
-            // Crear un mapa de los IDs de los nuevos agentes
             const newAgentIds = result.positions.map(agent => agent.id);
 
-            // Actualizar agentes existentes y agregar nuevos
             for (const agentData of result.positions) {
                 const existingAgent = agents.find((object3d) => object3d.id == agentData.id);
+                const newTargetPosition = [
+                    agentData.x + 0.5,
+                    agentData.y - 1,
+                    data.height - agentData.z - 0.5
+                ];
+
                 if (existingAgent) {
-                    // Actualizar posición
-                    existingAgent.position = [
-                        agentData.x + 0.5,
-                        agentData.y - 1,
-                        data.height - agentData.z - 0.5
-                    ];
+                    // Preparar la interpolación
+                    existingAgent.initialPosition = existingAgent.position.slice();
+                    existingAgent.targetPosition = newTargetPosition;
+                    existingAgent.elapsedTime = 0;
+                    existingAgent.progress = 0;
                     existingAgent.direction = agentData.direction;
                 } else {
                     // Agregar nuevo agente
                     const newAgent = new Object3D(
                         agentData.id,
-                        [agentData.x - 0.5, agentData.y - 1, data.height - agentData.z - 0.5],
+                        newTargetPosition,
                         [0, 0, 0],
                         [0.5, 0.5, 0.5]
                     );
@@ -469,14 +518,64 @@ async function getTrafficLights() {
         if (response.ok) {
             let result = await response.json()
 
-            for (const light of result.positions) {
-                const newLight = new Object3D(
-                    light.id,
-                    [light.x + 0.5, light.y - 0.5, data.height - light.z - 0.5],
+            // Crear un mapa de los IDs de los nuevos semáforos
+            const newLightIds = result.positions.map(light => light.id);
+
+            // Actualizar semáforos existentes y agregar nuevos
+            for (const lightData of result.positions) {
+                const existingLight = trafficLights.find((object3d) => object3d.id == lightData.id);
+                if (existingLight) {
+                    // Actualizar posición y estado
+                    existingLight.position = [
+                        lightData.x + 0.5,
+                        lightData.y - 0.5,
+                        data.height - lightData.z - 0.5
+                    ];
+                    existingLight.direction = lightData.direction;
+                    existingLight.go = lightData.go; // Actualizar el estado 'go'
+                } else {
+                    // Agregar nuevo semáforo
+                    const newLight = new Object3D(
+                        lightData.id,
+                        [lightData.x + 0.5, lightData.y - 0.5, data.height - lightData.z - 0.5],
+                        [0, 0, 0],
+                        [0.2, 0.2, 0.2]
+                    );
+                    newLight.direction = lightData.direction;
+                    newLight.go = lightData.go; // Establecer el estado 'go'
+                    trafficLights.push(newLight);
+                }
+            }
+
+            // Eliminar semáforos que ya no están presentes
+            for (let i = trafficLights.length - 1; i >= 0; i--) {
+                if (!newLightIds.includes(trafficLights[i].id)) {
+                    trafficLights.splice(i, 1);
+                }
+            }
+        }
+
+    } catch (error) {
+        console.log(error)
+    }
+}
+
+async function getRoads() {
+    try {
+        let response = await fetch(agent_server_uri + "getRoads")
+
+        if (response.ok) {
+            let result = await response.json()
+
+            for (const roadData of result.positions) {
+                const newRoad = new Object3D(
+                    roadData.id,
+                    [roadData.x, 0, data.height - roadData.z - 1],
                     [0, 0, 0],
-                    [0.2, 0.2, 0.2]
+                    [1, 1, 1]
                 );
-                trafficLights.push(newLight)
+                newRoad.direction = roadData.direction;
+                roads.push(newRoad)
             }
         }
 
@@ -490,22 +589,100 @@ async function getTrafficLights() {
  */
 async function update() {
     try {
-        // Send a request to the agent server to update the agent positions
+        // Enviar una solicitud al servidor para actualizar el modelo y obtener datos
         let response = await fetch(agent_server_uri + "update")
 
-        // Check if the response was successful
+        // Verificar si la respuesta fue exitosa
         if (response.ok) {
-            // Retrieve the updated agent positions
-            await getAgents()
-            // Log a message indicating that the agents have been updated
+            // Parsear la respuesta JSON
+            let result = await response.json();
+
+            // Actualizar los agentes (carros)
+            const carData = result.cars;
+            const newAgentIds = carData.map(agent => agent.id);
+
+            for (const agentData of carData) {
+                const existingAgent = agents.find((object3d) => object3d.id == agentData.id);
+                const newTargetPosition = [
+                    agentData.x + 0.5,
+                    agentData.y - 1,
+                    data.height - agentData.z - 0.5
+                ];
+
+                if (existingAgent) {
+                    // Preparar la interpolación
+                    existingAgent.initialPosition = existingAgent.position.slice();
+                    existingAgent.targetPosition = newTargetPosition;
+                    existingAgent.elapsedTime = 0;
+                    existingAgent.progress = 0;
+                    existingAgent.direction = agentData.direction;
+                } else {
+                    const randomColor = [
+                        Math.random(), // Valor aleatorio entre 0 y 1 para el componente rojo
+                        Math.random(), // Valor aleatorio entre 0 y 1 para el componente verde
+                        Math.random(), // Valor aleatorio entre 0 y 1 para el componente azul
+                        1.0            // Componente alfa (opacidad)
+                    ];
+
+                    // Agregar nuevo agente
+                    const newAgent = new Object3D(
+                        agentData.id,
+                        newTargetPosition,
+                        [0, 0, 0],
+                        [0.5, 0.5, 0.5]
+                    );
+                    newAgent.direction = agentData.direction;
+                    newAgent.color = randomColor;
+                    agents.push(newAgent);
+                }
+            }
+
+            // Eliminar agentes que ya no están presentes
+            for (let i = agents.length - 1; i >= 0; i--) {
+                if (!newAgentIds.includes(agents[i].id)) {
+                    agents.splice(i, 1);
+                }
+            }
+
+            // Actualizar semáforos
+            const trafficLightData = result.trafficLights;
+            const newLightIds = trafficLightData.map(light => light.id);
+
+            for (const lightData of trafficLightData) {
+                const existingLight = trafficLights.find((object3d) => object3d.id == lightData.id);
+                if (existingLight) {
+                    // Actualizar estado y posición si es necesario
+                    existingLight.go = lightData.go;
+                    // Si la posición o dirección puede cambiar, actualizar también:
+                    // existingLight.position = [...];
+                    // existingLight.direction = lightData.direction;
+                } else {
+                    // Agregar nuevo semáforo
+                    const newLight = new Object3D(
+                        lightData.id,
+                        [lightData.x + 0.5, lightData.y - 0.5, data.height - lightData.z - 0.5],
+                        [0, 0, 0],
+                        [0.2, 0.2, 0.2],
+                        lightData.direction,
+                        lightData.go
+                    );
+                    trafficLights.push(newLight);
+                }
+            }
+
+            // Eliminar semáforos que ya no están presentes
+            for (let i = trafficLights.length - 1; i >= 0; i--) {
+                if (!newLightIds.includes(trafficLights[i].id)) {
+                    trafficLights.splice(i, 1);
+                }
+            }
         }
 
     } catch (error) {
-        // Log any errors that occur during the request
+        // Registrar cualquier error que ocurra durante la solicitud
         console.log(error)
     }
 }
-
 /*
  * Draws the scene by rendering the agents and obstacles.
  * 
@@ -516,7 +693,14 @@ async function update() {
  * @param {WebGLVertexArrayObject} obstaclesVao - The vertex array object for obstacles.
  * @param {Object} obstaclesBufferInfo - The buffer information for obstacles.
  */
+
+
 async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo) {
+    const now = performance.now();// Convertir a segundos
+    let deltaTime = now - lastRenderTime;
+    const maxDeltaTime = 100; // Máximo deltaTime permitido (100 ms)
+    if (deltaTime > maxDeltaTime) deltaTime = maxDeltaTime;
+    lastRenderTime = now;
     // Resize the canvas to match the display size
     twgl.resizeCanvasToDisplaySize(gl.canvas);
 
@@ -554,23 +738,28 @@ async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildings
     // Set the distance for rendering
     const distance = 1
 
+
+
     // Draw the agents
-    drawAgents(distance, agentsVao, agentsBufferInfo, viewProjectionMatrix)
+    drawAgents(deltaTime, agentsVao, agentsBufferInfo, viewProjectionMatrix)
 
     // Draw the buildings
     drawBuildings(distance, buildingsVao, buildingsBufferInfo, viewProjectionMatrix)
 
     drawTrafficLights(distance, trafficLightsVao, trafficLightsBufferInfo, viewProjectionMatrix)
 
-    drawGrid(viewProjectionMatrix);
-    drawRoadLines(viewProjectionMatrix);
+    // drawGrid(viewProjectionMatrix);
+    // drawRoadLines(viewProjectionMatrix);
+
+    drawRoads(viewProjectionMatrix);
+    drawLines(viewProjectionMatrix);
 
 
     // Increment the frame count
     frameCount++
 
     // Update the scene every 30 frames
-    if (frameCount % 3 == 0) {
+    if (frameCount % 5 == 0) {
         frameCount = 0
         await update()
     }
@@ -616,47 +805,60 @@ function drawLight(viewProjectionMatrix) {
  * @param {Object} agentsBufferInfo - The buffer information for agents.
  * @param {Float32Array} viewProjectionMatrix - The view-projection matrix.
  */
-function drawAgents(distance, agentsVao, agentsBufferInfo, viewProjectionMatrix) {
-    // Bind the vertex array object for agents
+function drawAgents(deltaTime, agentsVao, agentsBufferInfo, viewProjectionMatrix) {
     gl.bindVertexArray(agentsVao);
 
-    // Iterate over the agents
     for (const agent of agents) {
-        // Compute the world matrix
+        // Actualizar progreso de interpolación
+        if (agent.progress < 1) {
+            agent.elapsedTime += deltaTime;
+            agent.progress = agent.elapsedTime / agent.interpolationDuration;
+            if (agent.progress > 1) agent.progress = 1;
+
+            // Interpolar posición
+            agent.position = [
+                agent.initialPosition[0] + (agent.targetPosition[0] - agent.initialPosition[0]) * agent.progress,
+                agent.initialPosition[1] + (agent.targetPosition[1] - agent.initialPosition[1]) * agent.progress,
+                agent.initialPosition[2] + (agent.targetPosition[2] - agent.initialPosition[2]) * agent.progress
+            ];
+        } else {
+            // Asegurar que la posición es la posición objetivo al finalizar la interpolación
+            agent.position = agent.targetPosition.slice();
+        }
+
+        // Construir matriz de mundo
         let world = twgl.m4.identity();
         world = twgl.m4.translate(world, agent.position);
 
-        // Get rotation angle based on agent's direction
+        // Obtener ángulo de rotación basado en la dirección del agente
         let rotationAngle = getRotationAngle(agent.direction);
-        // Rotate around Y-axis
         world = twgl.m4.rotateY(world, rotationAngle);
 
-        // Apply scaling
+        // Aplicar escala
         world = twgl.m4.scale(world, agent.scale);
 
-        // Compute the worldViewProjection matrix
+        // Calcular matrices requeridas
         let worldViewProjection = twgl.m4.multiply(viewProjectionMatrix, world);
-
-        // Compute the world inverse transpose matrix
         let u_worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
 
-        // Set the model uniforms
+        // Establecer uniformes
         let modelUniforms = {
             u_world: world,
             u_worldInverseTransform: u_worldInverseTransform,
             u_worldViewProjection: worldViewProjection,
-            u_ambientColor: [0.3, 0.6, 0.6, 1.0],
-            u_diffuseColor: [0.3, 0.6, 0.6, 1.0],
-            u_specularColor: [0.3, 0.6, 0.6, 1.0],
+            u_ambientColor: agent.color,
+            u_diffuseColor: agent.color,
+            u_specularColor: [0.5, 0.5, 0.5, 1.0],
             u_shininess: modelProperties.shininess,
         };
 
         twgl.setUniforms(programInfo, modelUniforms);
 
-        // Draw the object
+        // Dibujar el objeto
         twgl.drawBufferInfo(gl, agentsBufferInfo);
     }
 }
+
 function drawBuildings(distance, buildingsVao, buildingsBufferInfo, viewProjectionMatrix) {
     gl.bindVertexArray(buildingsVao);
 
@@ -701,13 +903,26 @@ function drawTrafficLights(distance, trafficLightsVao, trafficLightsBufferInfo, 
         // Compute the world matrix
         let world = twgl.m4.identity();
         world = twgl.m4.translate(world, light.position);
-        world = twgl.m4.rotateX(world, light.rotation[0]);
-        world = twgl.m4.rotateY(world, light.rotation[1]);
-        world = twgl.m4.rotateZ(world, light.rotation[2]);
+
+        // Obtener el ángulo de rotación basado en la dirección opuesta
+        let rotationAngle = getRotationAngle(oppositeDirection(light.direction));
+        // Rotar alrededor del eje Y
+        world = twgl.m4.rotateY(world, rotationAngle);
+
+        // Aplicar escala
         world = twgl.m4.scale(world, light.scale);
 
         // Compute the worldViewProjection matrix
         let worldViewProjection = twgl.m4.multiply(viewProjectionMatrix, world);
+
+        let lightColor;
+        if (light.go) {
+            // Semáforo en verde
+            lightColor = [0.0, 1.0, 0.0, 1.0]; // Verde brillante
+        } else {
+            // Semáforo en rojo
+            lightColor = [1.0, 0.0, 0.0, 1.0]; // Rojo brillante
+        }
 
         // Compute the world inverse transpose matrix
         let u_worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
@@ -717,8 +932,8 @@ function drawTrafficLights(distance, trafficLightsVao, trafficLightsBufferInfo, 
             u_world: world,
             u_worldInverseTransform: u_worldInverseTransform,
             u_worldViewProjection: worldViewProjection,
-            u_ambientColor: [0.1, 0.1, 0.1, 1.0],
-            u_diffuseColor: [0.1, 0.1, 0.1, 1.0],
+            u_ambientColor: lightColor,
+            u_diffuseColor: lightColor,
             u_specularColor: [0.1, 0.1, 0.1, 1.0],
             u_shininess: modelProperties.shininess,
         };
