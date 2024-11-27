@@ -759,7 +759,7 @@ async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildings
     frameCount++
 
     // Update the scene every 30 frames
-    if (frameCount % 5 == 0) {
+    if (frameCount % 10 == 0) {
         frameCount = 0
         await update()
     }
