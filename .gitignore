@@ -1,0 +1,9 @@
+# Byte-compiled Python files
+*.py[cod]
+*.pyo
+
+# C extensions
+*.so
+
+# Python cache directories
+__pycache__/
