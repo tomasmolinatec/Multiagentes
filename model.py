@@ -157,6 +157,9 @@ class CityModel(Model):
         for pos, dir in self.TLDirections.items():
             TL = self.grid.get_cell_list_contents([pos])[0]
             TL.direction = dir
+            agent = Road( (pos[0], pos[1]), self, dir)
+            self.grid.place_agent(agent, (pos[0], pos[1]))
+
 
         self.running = True
 
