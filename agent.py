@@ -126,8 +126,9 @@ class Car(Agent):
         if self.position == self.destination:
             # print("GOT THERE")
             self.model.grid.remove_agent(self)
-            self.model.schedule.remove(self)
+            self.model.schedule.remove_car(self)
             self.model.activeCars -= 1
+            self.model.arrived += 1
             self.model.addStepCount(self.stepCount)
             return
 
@@ -177,7 +178,7 @@ class Traffic_Light(Agent):
     Traffic light. Where the traffic lights are in the grid.
     """
 
-    def __init__(self, unique_id, model, red, green, start):
+    def __init__(self, unique_id, model, start, cycle):
         super().__init__(unique_id, model)
         """
         Creates a new Traffic light.
@@ -188,11 +189,9 @@ class Traffic_Light(Agent):
             timeToChange: After how many step should the traffic light change color 
         """
         self.direction = "up"
-        self.red = red
-        self.green = green
-        self.total = red + green
-        self.go = False if start < red else True
-        self.cur = start
+        self.go = start
+        self.cycle = cycle
+        self.cur = 0
 
     def step(self):
         """
@@ -200,11 +199,11 @@ class Traffic_Light(Agent):
         """
         self.cur += 1
         if not self.go:
-            if self.cur >= self.red:
+            if self.cur >= self.cycle:
                 self.cur = 0
                 self.go = True
         else:
-            if self.cur >= self.green:
+            if self.cur >= self.cycle:
                 self.cur = 0
                 self.go = False
 
@@ -240,7 +239,7 @@ class Road(Agent):
 
     def __init__(self, unique_id, model, pos, direction):
         super().__init__(unique_id, model)
-        self.pos = pos
+        self.position = pos
         self.direction = direction
 
     def step(self):

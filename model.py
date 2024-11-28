@@ -6,6 +6,7 @@ import json
 from collections import deque
 import pprint
 import mesa
+from CautionScheduler import CautionScheduler 
 
 
 class CityModel(Model):
@@ -73,10 +74,11 @@ class CityModel(Model):
         self.width = width
         self.height = height
         self.grid = MultiGrid(self.width, self.height, torus=False)
-        self.schedule = BaseScheduler(self)
+        # self.schedule = BaseScheduler(self)
         self.activeCars = 0
         self.memoCount = 0
         self.noMemoCount = 0
+        self.arrived = 0
 
         self.steps_distribution_lambda = {}
         self.steps_distribution = {}
@@ -93,18 +95,20 @@ class CityModel(Model):
                 "ActiveCars": lambda m: self.activeCars,
                 "Memoization": lambda m: self.memoCount,
                 "No Memoization": lambda m: self.noMemoCount,
+                "Arrived": lambda m: self.arrived
             }
         )
 
         # Goes through each character in the map file and creates the corresponding agent.
         self.starting_positions = [
-            (x, y) for x in [1, self.width - 1] for y in [1, self.height - 1]
+            (x, y) for x in [0, self.width - 1] for y in [0, self.height - 1]
         ]
 
         self.graph = {}
         self.memo = {}
         graphCreated = False
         self.TLDirections = {}
+        traffic_lights = []
         for r, row in enumerate(lines):
             for c, col in enumerate(row):
                 if col in ["v", "^", ">", "<"]:
@@ -136,14 +140,15 @@ class CityModel(Model):
                     #         #check = False
 
                 elif col in ["S", "s"]:
-                    red = 7
-                    green = 6
-                    start = 0 if col == "S" else 6
+                    cycle = 7
+                    
+                    start = True if col == "S" else False
                     agent = Traffic_Light(
-                        f"tl_{r*self.width+c}", self, red, green, start
+                        f"tl_{r*self.width+c}", self, start, cycle
                     )
                     self.grid.place_agent(agent, (c, self.height - r - 1))
-                    self.schedule.add(agent)
+                    # self.schedule.add(agent)
+                    traffic_lights.append(agent)
 
                 elif col == "#":
                     agent = Obstacle(f"ob_{r*self.width+c}", self)
@@ -161,6 +166,10 @@ class CityModel(Model):
             self.unique_id += 1
             self.grid.place_agent(agent, (pos[0], pos[1]))
 
+
+        self.schedule = CautionScheduler(self)
+        self.schedule.add_traffic_lights(traffic_lights)
+
         self.running = True
 
     def step(self):
@@ -177,7 +186,7 @@ class CityModel(Model):
                 if self.hasNoCars(pos):
                     car = Car(self.unique_id, self, pos)
                     self.unique_id += 1
-                    self.schedule.add(car)
+                    self.schedule.add_car(car)
                     self.grid.place_agent(car, pos)
                     added = True
 
