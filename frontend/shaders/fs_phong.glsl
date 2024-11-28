@@ -14,6 +14,7 @@ uniform vec4 u_diffuseColor;
 uniform vec4 u_specularColor;
 uniform float u_shininess;
 
+uniform vec4 u_emissionColor;
 out vec4 outColor;
 
 void main() {
@@ -40,6 +41,8 @@ void main() {
         specular = u_specularLight * u_specularColor * specularFactor;
     }
 
+    vec4 emission = u_emissionColor;
+
     // Combine all components
-    outColor = ambient + diffuse + specular;
+    outColor = ambient + diffuse + specular + emission;
 }

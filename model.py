@@ -98,7 +98,7 @@ class CityModel(Model):
 
         # Goes through each character in the map file and creates the corresponding agent.
         self.starting_positions = [
-            (x, y) for x in [1, self.width - 1] for y in [1, self.height - 1]
+            (x, y) for x in [0, self.width - 1] for y in [0, self.height - 1]
         ]
 
         self.graph = {}

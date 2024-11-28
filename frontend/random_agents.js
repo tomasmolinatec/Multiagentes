@@ -28,23 +28,23 @@ function parseOBJ(objString) {
         const parts = line.trim().split(/\s+/);
         const type = parts[0];
 
-        if (type === "v") { // Vertex positions
+        if (type === "v") { // Posiciones de vértices
             positionData.push(parts.slice(1).map(Number));
-        } else if (type === "vn") { // Vertex normals
+        } else if (type === "vn") { // Normales
             normalData.push(parts.slice(1).map(Number));
-        } else if (type === "f") { // Faces
+        } else if (type === "f") { // Caras
             const faceVertices = parts.slice(1);
             for (const vertex of faceVertices) {
                 const [vIndexStr, vtIndexStr, vnIndexStr] = vertex.split('/');
 
-                // Parse indices (subtract 1 because OBJ indices start at 1)
+                // Parsear índices (restar 1 porque los índices OBJ comienzan en 1)
                 const vIndex = parseInt(vIndexStr, 10) - 1;
                 const vnIndex = parseInt(vnIndexStr, 10) - 1;
 
                 positions.push(...positionData[vIndex]);
                 normals.push(...normalData[vnIndex]);
 
-                // Since we're expanding the vertices, indices are sequential
+                // Como estamos expandiendo los vértices, los índices son secuenciales
                 indices.push(indices.length);
             }
         }
@@ -63,21 +63,24 @@ function parseOBJ(objString) {
     };
 }
 
+// Obtiene el ángulo de rotación basado en la dirección proporcionada.
 function getRotationAngle(direction) {
     switch (direction) {
         case 'up':
-            return 0;  // Facing along positive Z-axis
+            return 0;
         case 'down':
-            return Math.PI;  // Facing along negative Z-axis
+            return Math.PI;
         case 'right':
-            return -Math.PI / 2;  // Facing along negative X-axis
+            return -Math.PI / 2;
         case 'left':
-            return Math.PI / 2;  // Facing along positive X-axis
+            return Math.PI / 2;
         default:
-            return 0;  // Default to 'up' if direction is undefined
+            return 0;
     }
 }
 
+
+// Obtiene la dirección opuesta a la proporcionada.
 function oppositeDirection(direction) {
     switch (direction) {
         case 'up':
@@ -89,11 +92,11 @@ function oppositeDirection(direction) {
         case 'right':
             return 'left';
         default:
-            return 'up';  // Valor por defecto si la dirección es indefinida
+            return 'up';
     }
 }
 
-// Define the Object3D class to represent 3D objects
+// Clase para representar objetos 3D en la escena.
 class Object3D {
     constructor(id, position = [0, 0, 0], rotation = [0, 0, 0], scale = [1, 1, 1], direction = "up", go = true, color = [1, 1, 1, 1]) {
         this.id = id;
@@ -106,31 +109,107 @@ class Object3D {
         this.matrix = twgl.m4.create();
         this.progress = 1; // Inicialmente, sin interpolación pendiente
         this.elapsedTime = 0;
-        this.interpolationDuration = 200;
-        this.go = go; // Duración de la interpolación en segundos
+        this.interpolationDuration = 200; // Duración de la interpolación en segundos
+        this.go = go;
         this.color = color;
     }
 }
 
-// Define the agent server URI
+// Clase para manejar la cámara en la escena.
+class Camera {
+    constructor(target = [0, 0, 0], distance = 50, azimuth = 0, elevation = Math.PI / 4) {
+        this.target = target; // Punto al que la cámara mira
+        this.distance = distance; // Distancia al objetivo
+        this.azimuth = azimuth; // Rotación horizontal
+        this.elevation = elevation; // Rotación vertical
+
+        // Límites para la elevación 
+        this.minElevation = -Math.PI / 2 + 0.1; // Aproximadamente -90 grados + 5.7 grados
+        this.maxElevation = Math.PI / 2 - 0.1;  // Aproximadamente 90 grados - 5.7 grados
+
+        // Velocidad de rotación, pan y zoom
+        this.rotationSpeed = 0.02;
+        this.panSpeed = 0.5;
+        this.zoomSpeed = 2.0;
+
+        // Panning variables
+        this.panOffset = [0, 0, 0];
+    }
+
+    // Método para actualizar la posición de la cámara
+    updateCameraMatrix() {
+        // Calcula la posición de la cámara en coordenadas esféricas
+        const x = this.target[0] + this.distance * Math.cos(this.elevation) * Math.sin(this.azimuth);
+        const y = this.target[1] + this.distance * Math.sin(this.elevation);
+        const z = this.target[2] + this.distance * Math.cos(this.elevation) * Math.cos(this.azimuth);
+
+        const camPos = [x + this.panOffset[0], y + this.panOffset[1], z + this.panOffset[2]];
+        const up = [0, 1, 0];
+
+        // Crea la matriz de vista
+        const viewMatrix = twgl.m4.lookAt(camPos, [
+            this.target[0] + this.panOffset[0],
+            this.target[1] + this.panOffset[1],
+            this.target[2] + this.panOffset[2]
+        ], up);
+
+        // Invierte la matriz para obtener la matriz de vista
+        const view = twgl.m4.inverse(viewMatrix);
+
+        return view;
+    }
+
+    // Métodos para controlar la cámara con el teclado
+    rotate(deltaAzimuth, deltaElevation) {
+        this.azimuth += deltaAzimuth * this.rotationSpeed;
+        this.elevation += deltaElevation * this.rotationSpeed;
+
+        // Limitar la elevación según los nuevos límites
+        this.elevation = Math.max(this.minElevation, Math.min(this.maxElevation, this.elevation));
+    }
+
+    pan(deltaX, deltaY) {
+        // Calcula los vectores de la cámara
+        const front = [
+            Math.sin(this.azimuth),
+            0,
+            Math.cos(this.azimuth)
+        ];
+        const right = [
+            front[2],
+            0,
+            -front[0]
+        ];
+        const up = [0, 1, 0];
+
+        // Actualiza el offset de panning
+        this.panOffset[0] += (-right[0] * deltaX + up[0] * deltaY) * this.panSpeed;
+        this.panOffset[1] += (-right[1] * deltaX + up[1] * deltaY) * this.panSpeed;
+        this.panOffset[2] += (-right[2] * deltaX + up[2] * deltaY) * this.panSpeed;
+    }
+
+    zoom(delta) {
+        this.distance += delta * this.zoomSpeed;
+        this.distance = Math.max(10, Math.min(200, this.distance)); // Limitar la distancia
+    }
+}
+
+
+// URI del servidor de agentes
 const agent_server_uri = "http://localhost:8586/";
 
-// Initialize arrays to store agents and obstacles
+// Arreglos para almacenar agentes y obstáculos
 const agents = [];
 const buildings = []
 const trafficLights = []
 const roads = []
 
-// Initialize WebGL-related variables
-let gl, programInfo, agentArrays, buildingArrays, trafficLightArrays, agentsBufferInfo, buildingsBufferInfo, trafficLightsBufferInfo, agentsVao, buildingsVao, trafficLightsVao, gridBufferInfo, gridVao, roadLinesBufferInfo, roadLinesVao;
+// Variables relacionadas con WebGL
+let gl, programInfo, agentArrays, buildingArrays, trafficLightArrays, agentsBufferInfo, buildingsBufferInfo, trafficLightsBufferInfo, agentsVao, buildingsVao, trafficLightsVao;
 
 let roadBufferInfo, roadVao, lineBufferInfo, lineVao;
 
-let lightBufferInfo, lightVao;
 let lastRenderTime = 0;
-
-// Define the camera position
-let cameraPosition = { x: 0, y: 50, z: 0.01 };
 
 // Initialize the frame count
 let frameCount = 0;
@@ -152,7 +231,7 @@ const settings = {
     specularLightColor: [0.5, 0.5, 0.5, 1.0],
 };
 
-// Define model properties
+// Propiedades del modelo
 const modelProperties = {
     ambientColor: [0.8, 0.8, 0.8, 1.0],  // Color gris claro
     diffuseColor: [0.8, 0.8, 0.8, 1.0],  // Color gris claro
@@ -160,61 +239,109 @@ const modelProperties = {
     shininess: 60.0,
 };
 
-const gridProperties = {
-    ambientColor: [0.8, 0.8, 0.8, 1.0],  // Color gris claro
-    diffuseColor: [0.8, 0.8, 0.8, 1.0],
-    specularColor: [0.0, 0.0, 0.0, 1.0], // Sin componente especular
-    shininess: 1.0,
-};
-
-// Define the data object
+// Datos iniciales
 const data = {
     NAgents: 3,
     width: 30,
     height: 30
 };
 
-function createLightRepresentation() {
-    // Crear una esfera pequeña para representar la luz
-    lightBufferInfo = twgl.primitives.createSphereBufferInfo(gl, 0.5, 12, 6);
-    lightVao = twgl.createVAOFromBufferInfo(gl, programInfo, lightBufferInfo);
+// Instancia de la cámara
+const camera = new Camera(
+    [data.width / 2, 0, data.height / 2], // Target
+    50, // Distancia inicial
+    0, // Azimut inicial
+    Math.PI / 4 // Elevación inicial
+);
+
+// Configura los controles de teclado para manejar la cámara.
+function setupKeyboardControls(camera) {
+    const keysPressed = {};
+
+    window.addEventListener('keydown', (e) => {
+        keysPressed[e.key] = true;
+    });
+
+    window.addEventListener('keyup', (e) => {
+        keysPressed[e.key] = false;
+    });
+
+    function update() {
+        // Rotación
+        if (keysPressed['ArrowLeft']) {
+            camera.rotate(-1, 0); // Rotar hacia la izquierda
+        }
+        if (keysPressed['ArrowRight']) {
+            camera.rotate(1, 0); // Rotar hacia la derecha
+        }
+        if (keysPressed['ArrowUp']) {
+            camera.rotate(0, 1); // Rotar hacia arriba
+        }
+        if (keysPressed['ArrowDown']) {
+            camera.rotate(0, -1); // Rotar hacia abajo
+        }
+
+        // Panning
+        if (keysPressed['d'] || keysPressed['Q']) {
+            camera.pan(-1, 0); // Panear a la izquierda
+        }
+        if (keysPressed['a'] || keysPressed['E']) {
+            camera.pan(1, 0); // Panear a la derecha
+        }
+        if (keysPressed['w'] || keysPressed['Z']) {
+            camera.pan(0, 1); // Panear hacia arriba
+        }
+        if (keysPressed['s'] || keysPressed['C']) {
+            camera.pan(0, -1); // Panear hacia abajo
+        }
+
+        // Zoom
+        if (keysPressed['+'] || keysPressed['=']) {
+            camera.zoom(-1); // Acercar
+        }
+        if (keysPressed['-'] || keysPressed['_']) {
+            camera.zoom(1); // Alejar
+        }
+
+        requestAnimationFrame(update);
+    }
+
+    update();
 }
 
-// Main function to initialize and run the application
+
+
+
+// Función principal para inicializar y ejecutar la aplicación.
 async function main() {
     const canvas = document.querySelector('canvas');
     gl = canvas.getContext('webgl2');
 
-    // Create the program information using the vertex and fragment shaders
+    // Crear la información del programa usando los shaders
     programInfo = twgl.createProgramInfo(gl, [vsGLSL, fsGLSL]);
 
-    createLightRepresentation();
 
-    // Generate the agent and obstacle data
+    // Crear la información del programa usando los shaders
     agentArrays = [];
     buildingArrays = [];
     trafficLightArrays = [];
 
-    // Set up the user interface
+    // Configurar la interfaz de usuario
     setupUI();
 
-    // Initialize the agents model
+    // Configurar controles de teclado para la cámara
+    setupKeyboardControls(camera);
+
+
+    // Inicializar el modelo de agentes
     await initAgentsModel();
 
-    // const gridArrays = createGridPlane(data.width, data.height);
-    // gridBufferInfo = twgl.createBufferInfoFromArrays(gl, gridArrays);
-    // gridVao = twgl.createVAOFromBufferInfo(gl, programInfo, gridBufferInfo);
-
-    // const roadLinesArrays = createRoadLines(data.width, data.height);
-    // roadLinesBufferInfo = twgl.createBufferInfoFromArrays(gl, roadLinesArrays);
-    // roadLinesVao = twgl.createVAOFromBufferInfo(gl, programInfo, roadLinesBufferInfo);
-
-    // Get the agents and obstacles
     await getAgents();
     await getBuildings();
     await getTrafficLights();
     await getRoads();
 
+    // Crear geometría de carreteras
     const roadGeometry = createRoadGeometry(roads);
 
     roadBufferInfo = twgl.createBufferInfoFromArrays(gl, roadGeometry.roadPositions);
@@ -223,6 +350,7 @@ async function main() {
     lineBufferInfo = twgl.createBufferInfoFromArrays(gl, roadGeometry.linePositions);
     lineVao = twgl.createVAOFromBufferInfo(gl, programInfo, lineBufferInfo);
 
+    // Cargar modelos .obj para agentes, edificios y semáforos
     await parseOBJFromFile("./car_red.obj").then(async (parsedObjArrays) => {
         agentArrays = parsedObjArrays;
     }).catch(error => console.error('Error loading OBJ file:', error));;
@@ -244,14 +372,13 @@ async function main() {
     trafficLightsBufferInfo = twgl.createBufferInfoFromArrays(gl, trafficLightArrays);
     trafficLightsVao = twgl.createVAOFromBufferInfo(gl, programInfo, trafficLightsBufferInfo);
 
-
-
     lastRenderTime = performance.now()
 
     // Draw the scene
     await drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo);
 }
 
+// Crea la geometría de las carreteras basándose en los datos de las carreteras
 function createRoadGeometry(roads) {
     const positions = [];
     const normals = [];
@@ -378,6 +505,7 @@ function drawRoads(viewProjectionMatrix) {
         u_diffuseColor: [0.2, 0.2, 0.2, 1.0],
         u_specularColor: [0.2, 0.2, 0.2, 1.0],
         u_shininess: 1.0,
+        u_emissionColor: [0.0, 0.0, 0.0, 1.0],
     };
 
     twgl.setUniforms(programInfo, modelUniforms);
@@ -401,6 +529,7 @@ function drawLines(viewProjectionMatrix) {
         u_diffuseColor: [1.0, 1.0, 1.0, 1.0],
         u_specularColor: [1.0, 1.0, 1.0, 1.0],
         u_shininess: 1.0,
+        u_emissionColor: [0.0, 0.0, 0.0, 1.0],
     };
 
     twgl.setUniforms(programInfo, modelUniforms);
@@ -408,9 +537,6 @@ function drawLines(viewProjectionMatrix) {
     twgl.drawBufferInfo(gl, lineBufferInfo, gl.TRIANGLES);
 }
 
-/*
- * Initializes the agents model by sending a POST request to the agent server.
- */
 async function initAgentsModel() {
     try {
         // Send a POST request to the agent server to initialize the model
@@ -436,9 +562,6 @@ async function initAgentsModel() {
     }
 }
 
-/*
- * Retrieves the current positions of all agents from the agent server.
- */
 async function getAgents() {
     try {
         let response = await fetch(agent_server_uri + "getCars")
@@ -452,7 +575,7 @@ async function getAgents() {
                 const existingAgent = agents.find((object3d) => object3d.id == agentData.id);
                 const newTargetPosition = [
                     agentData.x + 0.5,
-                    agentData.y - 1,
+                    agentData.y - 0.5,
                     data.height - agentData.z - 0.5
                 ];
 
@@ -584,9 +707,7 @@ async function getRoads() {
     }
 }
 
-/*
- * Updates the agent positions by sending a request to the agent server.
- */
+
 async function update() {
     try {
         // Enviar una solicitud al servidor para actualizar el modelo y obtener datos
@@ -605,7 +726,7 @@ async function update() {
                 const existingAgent = agents.find((object3d) => object3d.id == agentData.id);
                 const newTargetPosition = [
                     agentData.x + 0.5,
-                    agentData.y - 1,
+                    agentData.y - 0.88,
                     data.height - agentData.z - 0.5
                 ];
 
@@ -653,9 +774,7 @@ async function update() {
                 if (existingLight) {
                     // Actualizar estado y posición si es necesario
                     existingLight.go = lightData.go;
-                    // Si la posición o dirección puede cambiar, actualizar también:
-                    // existingLight.position = [...];
-                    // existingLight.direction = lightData.direction;
+
                 } else {
                     // Agregar nuevo semáforo
                     const newLight = new Object3D(
@@ -679,20 +798,9 @@ async function update() {
         }
 
     } catch (error) {
-        // Registrar cualquier error que ocurra durante la solicitud
         console.log(error)
     }
 }
-/*
- * Draws the scene by rendering the agents and obstacles.
- * 
- * @param {WebGLRenderingContext} gl - The WebGL rendering context.
- * @param {Object} programInfo - The program information.
- * @param {WebGLVertexArrayObject} agentsVao - The vertex array object for agents.
- * @param {Object} agentsBufferInfo - The buffer information for agents.
- * @param {WebGLVertexArrayObject} obstaclesVao - The vertex array object for obstacles.
- * @param {Object} obstaclesBufferInfo - The buffer information for obstacles.
- */
 
 
 async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo) {
@@ -731,9 +839,7 @@ async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildings
     twgl.setUniforms(programInfo, globalUniforms);
 
     // Set up the view-projection matrix
-    const viewProjectionMatrix = setupWorldView(gl);
-
-    drawLight(viewProjectionMatrix);
+    const viewProjectionMatrix = setupWorldView(gl, camera);
 
     // Set the distance for rendering
     const distance = 1
@@ -748,8 +854,6 @@ async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildings
 
     drawTrafficLights(distance, trafficLightsVao, trafficLightsBufferInfo, viewProjectionMatrix)
 
-    // drawGrid(viewProjectionMatrix);
-    // drawRoadLines(viewProjectionMatrix);
 
     drawRoads(viewProjectionMatrix);
     drawLines(viewProjectionMatrix);
@@ -768,43 +872,6 @@ async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildings
     requestAnimationFrame(() => drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo));
 }
 
-function drawLight(viewProjectionMatrix) {
-    gl.bindVertexArray(lightVao);
-
-    // Matriz de mundo para la luz
-    let world = twgl.m4.identity();
-    world = twgl.m4.translate(world, [settings.lightPosition.x, settings.lightPosition.y, settings.lightPosition.z]);
-    world = twgl.m4.scale(world, [1, 1, 1]); // Escalar si es necesario
-
-    // Calcular las matrices requeridas
-    let worldViewProjection = twgl.m4.multiply(viewProjectionMatrix, world);
-    let u_worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
-
-    // Uniformes del modelo para la luz
-    let modelUniforms = {
-        u_world: world,
-        u_worldInverseTransform: u_worldInverseTransform,
-        u_worldViewProjection: worldViewProjection,
-        u_ambientColor: [1.0, 1.0, 0.0, 1.0],  // Color amarillo brillante
-        u_diffuseColor: [1.0, 1.0, 0.0, 1.0],
-        u_specularColor: [1.0, 1.0, 0.0, 1.0],
-        u_shininess: 100.0,
-    };
-
-    twgl.setUniforms(programInfo, modelUniforms);
-
-    // Dibujar la esfera de la luz
-    twgl.drawBufferInfo(gl, lightBufferInfo);
-}
-
-/*
- * Draws the agents.
- * 
- * @param {Number} distance - The distance for rendering.
- * @param {WebGLVertexArrayObject} agentsVao - The vertex array object for agents.
- * @param {Object} agentsBufferInfo - The buffer information for agents.
- * @param {Float32Array} viewProjectionMatrix - The view-projection matrix.
- */
 function drawAgents(deltaTime, agentsVao, agentsBufferInfo, viewProjectionMatrix) {
     gl.bindVertexArray(agentsVao);
 
@@ -850,6 +917,7 @@ function drawAgents(deltaTime, agentsVao, agentsBufferInfo, viewProjectionMatrix
             u_diffuseColor: agent.color,
             u_specularColor: [0.5, 0.5, 0.5, 1.0],
             u_shininess: modelProperties.shininess,
+            u_emissionColor: [0.0, 0.0, 0.0, 1.0],
         };
 
         twgl.setUniforms(programInfo, modelUniforms);
@@ -886,6 +954,7 @@ function drawBuildings(distance, buildingsVao, buildingsBufferInfo, viewProjecti
             u_diffuseColor: modelProperties.diffuseColor,
             u_specularColor: modelProperties.specularColor,
             u_shininess: modelProperties.shininess,
+            u_emissionColor: [0.0, 0.0, 0.0, 1.0],
         };
 
         twgl.setUniforms(programInfo, modelUniforms);
@@ -936,6 +1005,7 @@ function drawTrafficLights(distance, trafficLightsVao, trafficLightsBufferInfo, 
             u_diffuseColor: lightColor,
             u_specularColor: [0.1, 0.1, 0.1, 1.0],
             u_shininess: modelProperties.shininess,
+            u_emissionColor: lightColor,
         };
 
         twgl.setUniforms(programInfo, modelUniforms);
@@ -946,61 +1016,29 @@ function drawTrafficLights(distance, trafficLightsVao, trafficLightsBufferInfo, 
     }
 }
 
-
-/*
- * Sets up the world view by creating the view-projection matrix.
- * 
- * @param {WebGLRenderingContext} gl - The WebGL rendering context.
- * @returns {Float32Array} The view-projection matrix.
- */
-function setupWorldView(gl) {
-    // Set the field of view (FOV) in radians
+function setupWorldView(gl, camera) {
+    // Campo de visión (FOV) en radianes
     const fov = 45 * Math.PI / 180;
 
-    // Calculate the aspect ratio of the canvas
+    // Calcula la relación de aspecto del canvas
     const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
 
-    // Create the projection matrix
+    // Crea la matriz de proyección
     const projectionMatrix = twgl.m4.perspective(fov, aspect, 1, 200);
 
-    // Set the target position
-    const target = [data.width / 2, 0, data.height / 2];
+    // Obtén la matriz de vista desde la cámara
+    const viewMatrix = camera.updateCameraMatrix();
 
-    // Set the up vector
-    const up = [0, 1, 0];
-
-    // Calculate the camera position
-    const camPos = [
-        settings.cameraPosition.x + data.width / 2,
-        settings.cameraPosition.y,
-        settings.cameraPosition.z + data.height / 2
-    ];
-
-    // Create the camera matrix
-    const cameraMatrix = twgl.m4.lookAt(camPos, target, up);
-
-    // Calculate the view matrix
-    const viewMatrix = twgl.m4.inverse(cameraMatrix);
-
-    // Calculate the view-projection matrix
+    // Calcula la matriz vista-proyección
     const viewProjectionMatrix = twgl.m4.multiply(projectionMatrix, viewMatrix);
 
-    // Return the view-projection matrix
     return viewProjectionMatrix;
 }
 
-/*
- * Sets up the user interface (UI) for the camera position.
- */
+
 function setupUI() {
     // Create a new GUI instance
     const gui = new GUI();
-
-    // Camera position
-    const posFolder = gui.addFolder('Camera Position:')
-    posFolder.add(settings.cameraPosition, 'x', -50, 50);
-    posFolder.add(settings.cameraPosition, 'y', -50, 50);
-    posFolder.add(settings.cameraPosition, 'z', -50, 50);
 
     // Light settings
     const lightFolder = gui.addFolder('Light Settings:')

@@ -48,7 +48,7 @@ class Car(Agent):
             path: Lista de celdas que llevan a la estación de carga más cercana
         """
         key = str(start) + str(self.destination)
-        
+
         if key in self.model.memo:
             # print("Used memoization!")
             self.model.memoCount += 1
@@ -142,20 +142,22 @@ class Car(Agent):
 
         canMove = True
 
-
         for agent in self.model.grid.get_cell_list_contents([self.position]):
             if isinstance(agent, Traffic_Light) and not agent.go:
-                canMove =  False
+                canMove = False
 
         if canMove:
             for agent in self.model.grid.get_cell_list_contents([next_move]):
                 if isinstance(agent, Car):
-                    if len(self.route) > 0  and self.timeStopped >= 1 and self.canChangeLane() :
+                    if (
+                        len(self.route) > 0
+                        and self.timeStopped >= 1
+                        and self.canChangeLane()
+                    ):
                         next_move = self.route[self.routeIndex]
                     else:
                         canMove = False
-            
-            
+
         if canMove:
             self.model.grid.move_agent(self, next_move)
             self.position = next_move
