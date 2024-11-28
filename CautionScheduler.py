@@ -99,6 +99,7 @@ class CautionScheduler(BaseScheduler):
     def step(self):
         """Advance each agent in the custom order."""
         # Activate agents in the first group
+        print(len(self.cars))
         for agent in self.traffic_lights:
             agent.step()
 
