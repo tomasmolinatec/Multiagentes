@@ -6,6 +6,9 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS, cross_origin
 from model import CityModel
 from agent import Car, Traffic_Light, Obstacle, Road
+import requests
+import json
+
 
 # Size of the board:
 number_agents = 10
@@ -213,4 +216,5 @@ def updateModel():
 
 if __name__ == "__main__":
     # Run the flask server in port 8585
+
     app.run(host="localhost", port=8586, debug=True)
