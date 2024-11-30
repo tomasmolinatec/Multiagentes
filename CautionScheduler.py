@@ -19,6 +19,7 @@ class CautionScheduler(BaseScheduler):
         h = self.model.height
         graph = self.model.graph
         # Solo funciona si son dos carriles en los lados
+        # Calculamos danger squares
         for i in range(2, h-2):
             left_col_pos = (1, i)
             if left_col_pos in graph:
@@ -69,7 +70,7 @@ class CautionScheduler(BaseScheduler):
         #                 "turn": (0,-1)
         #                 }
 
-        
+        # Calculamos pre danger squares
         for square in self.danger_squares:
             dir = self.danger_squares_info[square]["direction"]
             inv_dir = (dir[0] *-1, dir[1]*-1)
@@ -98,11 +99,12 @@ class CautionScheduler(BaseScheduler):
 
     def step(self):
         """Advance each agent in the custom order."""
-        # Activate agents in the first group
+        # Activamos semáforos
+       
         for agent in self.traffic_lights:
             agent.step()
 
-
+        # Acrivamos coches en danger squares
         self.activated_cars = set()
         pre_danger_agents = []
         for square in self.danger_squares:
@@ -116,6 +118,7 @@ class CautionScheduler(BaseScheduler):
                     agent.step()
                     self.activated_cars.add(agent)
        
+        # Activamos coches que no estan en pre danger squares
         for agent in self.cars:
             if agent not in self.activated_cars:
                 if agent.position in self.pre_danger_squares:
@@ -123,6 +126,7 @@ class CautionScheduler(BaseScheduler):
                 else:
                     agent.step()
 
+        # Activamos coches en pre danger squares
         for agent in pre_danger_agents:
             agent.step()
 

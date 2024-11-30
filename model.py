@@ -7,15 +7,11 @@ from collections import deque
 import pprint
 import mesa
 from CautionScheduler import CautionScheduler 
+import requests
 
 
 class CityModel(Model):
-    """
-    Creates a model based on a city map.
-
-    Args:
-        N: Number of agents in the simulation
-    """
+    #  Atributos de clase
 
     mapData = {
         ">": "right",
@@ -64,11 +60,12 @@ class CityModel(Model):
         ],
     }
 
-    def __init__(self, width, height, lines, steps_dist_max):
+    def __init__(self, width, height, lines, steps_dist_max): #Recibimos el mapa como parametros del servidor
 
-        # Load the map dictionary. The dictionary maps the characters in the map file to the corresponding agent.
+       
         super().__init__()
 
+        # Atributos
         self.destinations = []
         self.unique_id = 0
         self.width = width
@@ -83,6 +80,7 @@ class CityModel(Model):
         self.steps_distribution_lambda = {}
         self.steps_distribution = {}
 
+        # Logica de gráfica de distribucion
         for i in range(1, steps_dist_max):
             self.steps_distribution[i] = 0
             self.steps_distribution_lambda[str(i)] = (
@@ -99,7 +97,7 @@ class CityModel(Model):
             }
         )
 
-        # Goes through each character in the map file and creates the corresponding agent.
+        # Las esquinas, donde se agregan coches
         self.starting_positions = [
             (x, y) for x in [0, self.width - 1] for y in [0, self.height - 1]
         ]
@@ -121,25 +119,13 @@ class CityModel(Model):
                     self.unique_id += 1
                     self.grid.place_agent(agent, (c, self.height - r - 1))
 
-                    if not graphCreated:
+                    if not graphCreated: #Creamos el grafo al encontrar el primer Road en el mapa
                         p = (c, self.height - r - 1)
                         self.createGraph(lines, (c, self.height - r - 1))
                         graphCreated = True
 
-                    # for neighbor in CityModel.checkData[col]["sides"]:
-                    #     (x,y) = neighbor["pos"]
-                    #     infront = CityModel.checkData[col]["infront"]
 
-                    #     if c + x >= 0 and c + x < self.width and r + y >= 0 and r + y < self.height and neighbor["expected"] == lines[r + y][c + x] and infront["expected"] == lines[r + infront["pos"][1]][c +  infront["pos"][0]]:
-                    #         #print("FOUND at:", r,c)
-                    #         # print("Current pos:", c,r)
-                    #         # print("Value:", col)
-                    #         # print("Checked:",  c + x, r + y )
-                    #         # print("Val there", lines[r + y][c + x] )
-                    #         agent.directions.append(neighbor["expected"])
-                    #         #check = False
-
-                elif col in ["S", "s"]:
+                elif col in ["S", "s"]: # Semáforos
                     cycle = 7
                     
                     start = True if col == "S" else False
@@ -159,18 +145,29 @@ class CityModel(Model):
                     self.grid.place_agent(agent, (c, self.height - r - 1))
                     self.destinations.append((c, self.height - r - 1))
 
-        for pos, dir in self.TLDirections.items():
+
+        for pos, dir in self.TLDirections.items(): 
+            # Creamos los semáforos, son creados aqui porque la direccion que tienen es calculada al crear el grafo
+            # Tambien creamos un Road agent ahi para la visualizacion en webgl
             TL = self.grid.get_cell_list_contents([pos])[0]
             TL.direction = dir
             agent = Road(self.unique_id, self, (pos[0], pos[1]), dir)
             self.unique_id += 1
             self.grid.place_agent(agent, (pos[0], pos[1]))
 
-
+        # Crear nuestro sheduler
         self.schedule = CautionScheduler(self)
         self.schedule.add_traffic_lights(traffic_lights)
 
         self.running = True
+        self.url = "http://10.49.12.55:5000/api/"
+        self.endpoint = "validate_attempt"
+        for pos in self.starting_positions: #Crear coches iniciales
+                car = Car(self.unique_id, self, pos)
+                self.unique_id += 1
+                self.schedule.add_car(car)
+                self.grid.place_agent(car, pos)
+    
 
     def step(self):
         """Advance the model by one step."""
@@ -179,7 +176,8 @@ class CityModel(Model):
         self.schedule.step()
         self.datacollector.collect(self)
         added = True
-
+        
+        # Agregamos coches
         if self.schedule.steps % 1 == 0:
             added = False
             for pos in self.starting_positions:
@@ -189,8 +187,10 @@ class CityModel(Model):
                     self.schedule.add_car(car)
                     self.grid.place_agent(car, pos)
                     added = True
+        # if self.schedule.steps % 10 == 0:
+            #  self.postStats()
 
-        if not added:
+        if not added: #Parar si no se logro agregar mas coches
             print("stop")
             self.running = False
 
@@ -232,6 +232,7 @@ class CityModel(Model):
                 return direction["expected"]
 
     def createGraph(self, lines, start):
+        # Crear el grafo(dict de adyacencia) usando BFS
 
         queue = deque([start])
         visited = {start}
@@ -252,7 +253,7 @@ class CityModel(Model):
                 visited.add(next)
                 queue.append(next)
 
-            for side in CityModel.sideCheck[curDirection]:
+            for side in CityModel.sideCheck[curDirection]: # Checar los lados, para cambios de carril, vueltas y destinos
                 x = cur[0] + side["pos"][0]
                 y = cur[1] + side["pos"][1]
 
@@ -267,3 +268,25 @@ class CityModel(Model):
         # print("function ended")
         # pprint.pprint(self.graph)
         return
+    
+    def postStats(self):
+        #Para el concurso
+       
+
+        data = {
+            "year" : 2024,
+            "classroom" : 301,
+            "name" : "LeTom y Diego Curry",
+            "current_cars": self.activeCars,
+            "total_arrived": self.arrived,
+            # "steps": self.schedule.steps 
+        }
+
+        headers = {
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(self.url+self.endpoint, data=json.dumps(data), headers=headers)
+
+        # print("Request " + "successful" if response.status_code == 200 else "failed", "Status code:", response.status_code)
+        # print("Response:", response.json())
