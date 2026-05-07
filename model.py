@@ -167,7 +167,7 @@ class CityModel(Model):
             self.schedule.add_car(car)
             self.grid.place_agent(car, pos)
 
-    MAX_STEPS = 50
+    MAX_STEPS = 400
 
     def step(self):
         """Advance the model by one step."""
