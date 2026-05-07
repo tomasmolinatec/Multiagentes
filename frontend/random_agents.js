@@ -213,6 +213,7 @@ let lastRenderTime = 0;
 
 // Initialize the frame count
 let frameCount = 0;
+let isUpdating = false;
 
 // Define settings for the lighting and camera
 const settings = {
@@ -803,7 +804,7 @@ async function update() {
 }
 
 
-async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo) {
+function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo) {
     const now = performance.now();// Convertir a segundos
     let deltaTime = now - lastRenderTime;
     const maxDeltaTime = 100; // Máximo deltaTime permitido (100 ms)
@@ -862,10 +863,11 @@ async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildings
     // Increment the frame count
     frameCount++
 
-    // Update the scene every 30 frames
-    if (frameCount % 10 == 0) {
+    // Update the scene every 10 frames, without blocking the render loop
+    if (frameCount % 10 == 0 && !isUpdating) {
         frameCount = 0
-        await update()
+        isUpdating = true
+        update().finally(() => { isUpdating = false })
     }
 
     // Request the next frame

@@ -7,3 +7,5 @@
 
 # Python cache directories
 __pycache__/
+
+env/
