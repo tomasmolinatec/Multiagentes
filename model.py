@@ -6,7 +6,7 @@ import json
 from collections import deque
 import pprint
 import mesa
-from CautionScheduler import CautionScheduler 
+from CautionScheduler import CautionScheduler
 import requests
 
 
@@ -60,9 +60,10 @@ class CityModel(Model):
         ],
     }
 
-    def __init__(self, width, height, lines, steps_dist_max): #Recibimos el mapa como parametros del servidor
+    def __init__(
+        self, width, height, lines, steps_dist_max
+    ):  # Recibimos el mapa como parametros del servidor
 
-       
         super().__init__()
 
         # Atributos
@@ -93,7 +94,7 @@ class CityModel(Model):
                 "ActiveCars": lambda m: self.activeCars,
                 "Memoization": lambda m: self.memoCount,
                 "No Memoization": lambda m: self.noMemoCount,
-                "Arrived": lambda m: self.arrived
+                "Arrived": lambda m: self.arrived,
             }
         )
 
@@ -119,19 +120,18 @@ class CityModel(Model):
                     self.unique_id += 1
                     self.grid.place_agent(agent, (c, self.height - r - 1))
 
-                    if not graphCreated: #Creamos el grafo al encontrar el primer Road en el mapa
+                    if (
+                        not graphCreated
+                    ):  # Creamos el grafo al encontrar el primer Road en el mapa
                         p = (c, self.height - r - 1)
                         self.createGraph(lines, (c, self.height - r - 1))
                         graphCreated = True
 
-
-                elif col in ["S", "s"]: # Semáforos
+                elif col in ["S", "s"]:  # Semáforos
                     cycle = 7
-                    
+
                     start = True if col == "S" else False
-                    agent = Traffic_Light(
-                        f"tl_{r*self.width+c}", self, start, cycle
-                    )
+                    agent = Traffic_Light(f"tl_{r*self.width+c}", self, start, cycle)
                     self.grid.place_agent(agent, (c, self.height - r - 1))
                     # self.schedule.add(agent)
                     traffic_lights.append(agent)
@@ -145,8 +145,7 @@ class CityModel(Model):
                     self.grid.place_agent(agent, (c, self.height - r - 1))
                     self.destinations.append((c, self.height - r - 1))
 
-
-        for pos, dir in self.TLDirections.items(): 
+        for pos, dir in self.TLDirections.items():
             # Creamos los semáforos, son creados aqui porque la direccion que tienen es calculada al crear el grafo
             # Tambien creamos un Road agent ahi para la visualizacion en webgl
             TL = self.grid.get_cell_list_contents([pos])[0]
@@ -162,14 +161,13 @@ class CityModel(Model):
         self.running = True
         self.url = "http://10.49.12.55:5000/api/"
         self.endpoint = "validate_attempt"
-        for pos in self.starting_positions: #Crear coches iniciales
-                car = Car(self.unique_id, self, pos)
-                self.unique_id += 1
-                self.schedule.add_car(car)
-                self.grid.place_agent(car, pos)
-    
+        for pos in self.starting_positions:  # Crear coches iniciales
+            car = Car(self.unique_id, self, pos)
+            self.unique_id += 1
+            self.schedule.add_car(car)
+            self.grid.place_agent(car, pos)
 
-    MAX_STEPS = 400
+    MAX_STEPS = 50
 
     def step(self):
         """Advance the model by one step."""
@@ -243,7 +241,9 @@ class CityModel(Model):
                 visited.add(next)
                 queue.append(next)
 
-            for side in CityModel.sideCheck[curDirection]: # Checar los lados, para cambios de carril, vueltas y destinos
+            for side in CityModel.sideCheck[
+                curDirection
+            ]:  # Checar los lados, para cambios de carril, vueltas y destinos
                 x = cur[0] + side["pos"][0]
                 y = cur[1] + side["pos"][1]
 
@@ -258,25 +258,24 @@ class CityModel(Model):
         # print("function ended")
         # pprint.pprint(self.graph)
         return
-    
+
     def postStats(self):
-        #Para el concurso
-       
+        # Para el concurso
 
         data = {
-            "year" : 2024,
-            "classroom" : 301,
-            "name" : "LeTom y Diego Curry",
+            "year": 2024,
+            "classroom": 301,
+            "name": "LeTom y Diego Curry",
             "current_cars": self.activeCars,
             "total_arrived": self.arrived,
-            # "steps": self.schedule.steps 
+            # "steps": self.schedule.steps
         }
 
-        headers = {
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.post(self.url+self.endpoint, data=json.dumps(data), headers=headers)
+        headers = {"Content-Type": "application/json"}
+
+        response = requests.post(
+            self.url + self.endpoint, data=json.dumps(data), headers=headers
+        )
 
         # print("Request " + "successful" if response.status_code == 200 else "failed", "Status code:", response.status_code)
         # print("Response:", response.json())

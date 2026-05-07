@@ -314,70 +314,71 @@ function setupKeyboardControls(camera) {
 
 
 
-// Función principal para inicializar y ejecutar la aplicación.
+// Primera llamada: inicializa WebGL, carga assets, arranca el render loop.
+// Llamadas siguientes (restart): solo resetea datos y modelo.
+let webglInitialized = false;
+
 async function main() {
-    const canvas = document.querySelector('canvas');
-    gl = canvas.getContext('webgl2');
+    const firstRun = !webglInitialized;
 
-    // Crear la información del programa usando los shaders
-    programInfo = twgl.createProgramInfo(gl, [vsGLSL, fsGLSL]);
+    if (firstRun) {
+        const canvas = document.querySelector('canvas');
+        gl = canvas.getContext('webgl2');
+        programInfo = twgl.createProgramInfo(gl, [vsGLSL, fsGLSL]);
 
+        setupUI();
+        setupKeyboardControls(camera);
 
-    // Crear la información del programa usando los shaders
-    agentArrays = [];
-    buildingArrays = [];
-    trafficLightArrays = [];
+        await parseOBJFromFile("./car_red.obj").then(parsed => { agentArrays = parsed; })
+            .catch(e => console.error('Error loading car_red.obj:', e));
+        agentsBufferInfo = twgl.createBufferInfoFromArrays(gl, agentArrays);
+        agentsVao = twgl.createVAOFromBufferInfo(gl, programInfo, agentsBufferInfo);
 
-    // Configurar la interfaz de usuario
-    setupUI();
+        await parseOBJFromFile("./build.obj").then(parsed => { buildingArrays = parsed; })
+            .catch(e => console.error('Error loading build.obj:', e));
+        buildingsBufferInfo = twgl.createBufferInfoFromArrays(gl, buildingArrays);
+        buildingsVao = twgl.createVAOFromBufferInfo(gl, programInfo, buildingsBufferInfo);
 
-    // Configurar controles de teclado para la cámara
-    setupKeyboardControls(camera);
+        await parseOBJFromFile("./traffic_light.obj").then(parsed => { trafficLightArrays = parsed; })
+            .catch(e => console.error('Error loading traffic_light.obj:', e));
+        trafficLightsBufferInfo = twgl.createBufferInfoFromArrays(gl, trafficLightArrays);
+        trafficLightsVao = twgl.createVAOFromBufferInfo(gl, programInfo, trafficLightsBufferInfo);
 
+        webglInitialized = true;
+    }
 
-    // Inicializar el modelo de agentes
+    // Pausar el polling durante la carga para evitar race conditions
+    simulationRunning = false;
+    isUpdating = false;
+    frameCount = 0;
+
+    // Reset simulation data
+    agents.length = 0;
+    buildings.length = 0;
+    trafficLights.length = 0;
+    roads.length = 0;
+
     await initAgentsModel();
-
     await getAgents();
     await getBuildings();
     await getTrafficLights();
     await getRoads();
 
-    // Crear geometría de carreteras
     const roadGeometry = createRoadGeometry(roads);
-
     roadBufferInfo = twgl.createBufferInfoFromArrays(gl, roadGeometry.roadPositions);
     roadVao = twgl.createVAOFromBufferInfo(gl, programInfo, roadBufferInfo);
-
     lineBufferInfo = twgl.createBufferInfoFromArrays(gl, roadGeometry.linePositions);
     lineVao = twgl.createVAOFromBufferInfo(gl, programInfo, lineBufferInfo);
 
-    // Cargar modelos .obj para agentes, edificios y semáforos
-    await parseOBJFromFile("./car_red.obj").then(async (parsedObjArrays) => {
-        agentArrays = parsedObjArrays;
-    }).catch(error => console.error('Error loading OBJ file:', error));;
+    lastRenderTime = performance.now();
 
-    agentsBufferInfo = twgl.createBufferInfoFromArrays(gl, agentArrays);
-    agentsVao = twgl.createVAOFromBufferInfo(gl, programInfo, agentsBufferInfo);
+    // Todo listo, arranca la simulacion
+    simulationRunning = true;
 
-    await parseOBJFromFile("./build.obj").then(async (parsedObjArrays) => {
-        buildingArrays = parsedObjArrays;
-    }).catch(error => console.error('Error loading OBJ file:', error));;
-
-    buildingsBufferInfo = twgl.createBufferInfoFromArrays(gl, buildingArrays);
-    buildingsVao = twgl.createVAOFromBufferInfo(gl, programInfo, buildingsBufferInfo);
-
-    await parseOBJFromFile("./traffic_light.obj").then(async (parsedObjArrays) => {
-        trafficLightArrays = parsedObjArrays;
-    }).catch(error => console.error('Error loading OBJ file:', error));;
-
-    trafficLightsBufferInfo = twgl.createBufferInfoFromArrays(gl, trafficLightArrays);
-    trafficLightsVao = twgl.createVAOFromBufferInfo(gl, programInfo, trafficLightsBufferInfo);
-
-    lastRenderTime = performance.now()
-
-    // Draw the scene
-    drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo);
+    // El render loop solo se arranca una vez
+    if (firstRun) {
+        drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo);
+    }
 }
 
 // Crea la geometría de las carreteras basándose en los datos de las carreteras
@@ -800,6 +801,12 @@ async function update() {
                         lightData.direction,
                         lightData.go
                     );
+                    let world = twgl.m4.identity();
+                    world = twgl.m4.translate(world, newLight.position);
+                    world = twgl.m4.rotateY(world, getRotationAngle(oppositeDirection(newLight.direction)));
+                    world = twgl.m4.scale(world, newLight.scale);
+                    newLight.worldMatrix = world;
+                    newLight.worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
                     trafficLights.push(newLight);
                 }
             }
