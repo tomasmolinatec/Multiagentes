@@ -8,6 +8,7 @@ from model import CityModel
 from agent import Car, Traffic_Light, Obstacle, Road
 import requests
 import json
+import os
 
 
 # Size of the board:
@@ -19,7 +20,7 @@ currentStep = 0
 
 # This application will be used to interact with WebGL
 app = Flask("Traffic Project")
-cors = CORS(app, origins=["http://localhost"])
+cors = CORS(app, origins="*")
 
 
 # This route will be used to send the parameters of the simulation to the server.
@@ -205,6 +206,7 @@ def updateModel():
                 {
                     "message": f"Model updated to step {currentStep}.",
                     "currentStep": currentStep,
+                    "running": randomModel.running,
                     "cars": carPositions,
                     "trafficLights": trafficLightPositions,
                 }
@@ -215,6 +217,5 @@ def updateModel():
 
 
 if __name__ == "__main__":
-    # Run the flask server in port 8585
-
-    app.run(host="localhost", port=8586, debug=True)
+    port = int(os.environ.get("PORT", 8586))
+    app.run(host="0.0.0.0", port=port, debug=False)

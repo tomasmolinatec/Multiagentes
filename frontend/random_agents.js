@@ -196,7 +196,7 @@ class Camera {
 
 
 // URI del servidor de agentes
-const agent_server_uri = "http://localhost:8586/";
+const agent_server_uri = import.meta.env.VITE_API_URL ?? "http://localhost:8586/";
 
 // Arreglos para almacenar agentes y obstáculos
 const agents = [];
@@ -213,6 +213,8 @@ let lastRenderTime = 0;
 
 // Initialize the frame count
 let frameCount = 0;
+let isUpdating = false;
+let simulationRunning = true;
 
 // Define settings for the lighting and camera
 const settings = {
@@ -312,70 +314,71 @@ function setupKeyboardControls(camera) {
 
 
 
-// Función principal para inicializar y ejecutar la aplicación.
+// Primera llamada: inicializa WebGL, carga assets, arranca el render loop.
+// Llamadas siguientes (restart): solo resetea datos y modelo.
+let webglInitialized = false;
+
 async function main() {
-    const canvas = document.querySelector('canvas');
-    gl = canvas.getContext('webgl2');
+    const firstRun = !webglInitialized;
 
-    // Crear la información del programa usando los shaders
-    programInfo = twgl.createProgramInfo(gl, [vsGLSL, fsGLSL]);
+    if (firstRun) {
+        const canvas = document.querySelector('canvas');
+        gl = canvas.getContext('webgl2');
+        programInfo = twgl.createProgramInfo(gl, [vsGLSL, fsGLSL]);
 
+        setupUI();
+        setupKeyboardControls(camera);
 
-    // Crear la información del programa usando los shaders
-    agentArrays = [];
-    buildingArrays = [];
-    trafficLightArrays = [];
+        await parseOBJFromFile("./car_red.obj").then(parsed => { agentArrays = parsed; })
+            .catch(e => console.error('Error loading car_red.obj:', e));
+        agentsBufferInfo = twgl.createBufferInfoFromArrays(gl, agentArrays);
+        agentsVao = twgl.createVAOFromBufferInfo(gl, programInfo, agentsBufferInfo);
 
-    // Configurar la interfaz de usuario
-    setupUI();
+        await parseOBJFromFile("./build.obj").then(parsed => { buildingArrays = parsed; })
+            .catch(e => console.error('Error loading build.obj:', e));
+        buildingsBufferInfo = twgl.createBufferInfoFromArrays(gl, buildingArrays);
+        buildingsVao = twgl.createVAOFromBufferInfo(gl, programInfo, buildingsBufferInfo);
 
-    // Configurar controles de teclado para la cámara
-    setupKeyboardControls(camera);
+        await parseOBJFromFile("./traffic_light.obj").then(parsed => { trafficLightArrays = parsed; })
+            .catch(e => console.error('Error loading traffic_light.obj:', e));
+        trafficLightsBufferInfo = twgl.createBufferInfoFromArrays(gl, trafficLightArrays);
+        trafficLightsVao = twgl.createVAOFromBufferInfo(gl, programInfo, trafficLightsBufferInfo);
 
+        webglInitialized = true;
+    }
 
-    // Inicializar el modelo de agentes
+    // Pausar el polling durante la carga para evitar race conditions
+    simulationRunning = false;
+    isUpdating = false;
+    frameCount = 0;
+
+    // Reset simulation data
+    agents.length = 0;
+    buildings.length = 0;
+    trafficLights.length = 0;
+    roads.length = 0;
+
     await initAgentsModel();
-
     await getAgents();
     await getBuildings();
     await getTrafficLights();
     await getRoads();
 
-    // Crear geometría de carreteras
     const roadGeometry = createRoadGeometry(roads);
-
     roadBufferInfo = twgl.createBufferInfoFromArrays(gl, roadGeometry.roadPositions);
     roadVao = twgl.createVAOFromBufferInfo(gl, programInfo, roadBufferInfo);
-
     lineBufferInfo = twgl.createBufferInfoFromArrays(gl, roadGeometry.linePositions);
     lineVao = twgl.createVAOFromBufferInfo(gl, programInfo, lineBufferInfo);
 
-    // Cargar modelos .obj para agentes, edificios y semáforos
-    await parseOBJFromFile("./car_red.obj").then(async (parsedObjArrays) => {
-        agentArrays = parsedObjArrays;
-    }).catch(error => console.error('Error loading OBJ file:', error));;
+    lastRenderTime = performance.now();
 
-    agentsBufferInfo = twgl.createBufferInfoFromArrays(gl, agentArrays);
-    agentsVao = twgl.createVAOFromBufferInfo(gl, programInfo, agentsBufferInfo);
+    // Todo listo, arranca la simulacion
+    simulationRunning = true;
 
-    await parseOBJFromFile("./build.obj").then(async (parsedObjArrays) => {
-        buildingArrays = parsedObjArrays;
-    }).catch(error => console.error('Error loading OBJ file:', error));;
-
-    buildingsBufferInfo = twgl.createBufferInfoFromArrays(gl, buildingArrays);
-    buildingsVao = twgl.createVAOFromBufferInfo(gl, programInfo, buildingsBufferInfo);
-
-    await parseOBJFromFile("./traffic_light.obj").then(async (parsedObjArrays) => {
-        trafficLightArrays = parsedObjArrays;
-    }).catch(error => console.error('Error loading OBJ file:', error));;
-
-    trafficLightsBufferInfo = twgl.createBufferInfoFromArrays(gl, trafficLightArrays);
-    trafficLightsVao = twgl.createVAOFromBufferInfo(gl, programInfo, trafficLightsBufferInfo);
-
-    lastRenderTime = performance.now()
-
-    // Draw the scene
-    await drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo);
+    // El render loop solo se arranca una vez
+    if (firstRun) {
+        drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo);
+    }
 }
 
 // Crea la geometría de las carreteras basándose en los datos de las carreteras
@@ -625,6 +628,12 @@ async function getBuildings() {
                     [building.x + 0.5, building.y - 1, data.height - building.z - 0.5],
                     [0, 0, 0]
                 );
+                // Pre-compute static matrices once — buildings never move
+                let world = twgl.m4.identity();
+                world = twgl.m4.translate(world, newBuilding.position);
+                world = twgl.m4.scale(world, newBuilding.scale);
+                newBuilding.worldMatrix = world;
+                newBuilding.worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
                 buildings.push(newBuilding)
             }
         }
@@ -665,7 +674,14 @@ async function getTrafficLights() {
                         [0.2, 0.2, 0.2]
                     );
                     newLight.direction = lightData.direction;
-                    newLight.go = lightData.go; // Establecer el estado 'go'
+                    newLight.go = lightData.go;
+                    // Pre-compute static matrices once — traffic lights never move
+                    let world = twgl.m4.identity();
+                    world = twgl.m4.translate(world, newLight.position);
+                    world = twgl.m4.rotateY(world, getRotationAngle(oppositeDirection(newLight.direction)));
+                    world = twgl.m4.scale(world, newLight.scale);
+                    newLight.worldMatrix = world;
+                    newLight.worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
                     trafficLights.push(newLight);
                 }
             }
@@ -785,6 +801,12 @@ async function update() {
                         lightData.direction,
                         lightData.go
                     );
+                    let world = twgl.m4.identity();
+                    world = twgl.m4.translate(world, newLight.position);
+                    world = twgl.m4.rotateY(world, getRotationAngle(oppositeDirection(newLight.direction)));
+                    world = twgl.m4.scale(world, newLight.scale);
+                    newLight.worldMatrix = world;
+                    newLight.worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
                     trafficLights.push(newLight);
                 }
             }
@@ -795,6 +817,11 @@ async function update() {
                     trafficLights.splice(i, 1);
                 }
             }
+
+            if (!result.running) {
+                simulationRunning = false;
+                showSimulationEnded();
+            }
         }
 
     } catch (error) {
@@ -803,7 +830,7 @@ async function update() {
 }
 
 
-async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo) {
+function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo) {
     const now = performance.now();// Convertir a segundos
     let deltaTime = now - lastRenderTime;
     const maxDeltaTime = 100; // Máximo deltaTime permitido (100 ms)
@@ -862,10 +889,11 @@ async function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildings
     // Increment the frame count
     frameCount++
 
-    // Update the scene every 30 frames
-    if (frameCount % 10 == 0) {
+    // Update the scene every 10 frames, without blocking the render loop
+    if (simulationRunning && frameCount % 10 == 0 && !isUpdating) {
         frameCount = 0
-        await update()
+        isUpdating = true
+        update().finally(() => { isUpdating = false })
     }
 
     // Request the next frame
@@ -931,25 +959,10 @@ function drawBuildings(distance, buildingsVao, buildingsBufferInfo, viewProjecti
     gl.bindVertexArray(buildingsVao);
 
     for (const building of buildings) {
-        // Compute the world matrix
-        let world = twgl.m4.identity();
-        world = twgl.m4.translate(world, building.position);
-        world = twgl.m4.rotateX(world, building.rotation[0]);
-        world = twgl.m4.rotateY(world, building.rotation[1]);
-        world = twgl.m4.rotateZ(world, building.rotation[2]);
-        world = twgl.m4.scale(world, building.scale);
-
-        // Compute the worldViewProjection matrix
-        let worldViewProjection = twgl.m4.multiply(viewProjectionMatrix, world);
-
-        // Compute the world inverse transpose matrix
-        let u_worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
-
-        // Set the model uniforms
-        let modelUniforms = {
-            u_world: world,
-            u_worldInverseTransform: u_worldInverseTransform,
-            u_worldViewProjection: worldViewProjection,
+        const modelUniforms = {
+            u_world: building.worldMatrix,
+            u_worldInverseTransform: building.worldInverseTransform,
+            u_worldViewProjection: twgl.m4.multiply(viewProjectionMatrix, building.worldMatrix),
             u_ambientColor: modelProperties.ambientColor,
             u_diffuseColor: modelProperties.diffuseColor,
             u_specularColor: modelProperties.specularColor,
@@ -958,10 +971,7 @@ function drawBuildings(distance, buildingsVao, buildingsBufferInfo, viewProjecti
         };
 
         twgl.setUniforms(programInfo, modelUniforms);
-
-        // Draw the object
         twgl.drawBufferInfo(gl, buildingsBufferInfo);
-
     }
 }
 
@@ -969,38 +979,12 @@ function drawTrafficLights(distance, trafficLightsVao, trafficLightsBufferInfo, 
     gl.bindVertexArray(trafficLightsVao);
 
     for (const light of trafficLights) {
-        // Compute the world matrix
-        let world = twgl.m4.identity();
-        world = twgl.m4.translate(world, light.position);
+        const lightColor = light.go ? [0.0, 1.0, 0.0, 1.0] : [1.0, 0.0, 0.0, 1.0];
 
-        // Obtener el ángulo de rotación basado en la dirección opuesta
-        let rotationAngle = getRotationAngle(oppositeDirection(light.direction));
-        // Rotar alrededor del eje Y
-        world = twgl.m4.rotateY(world, rotationAngle);
-
-        // Aplicar escala
-        world = twgl.m4.scale(world, light.scale);
-
-        // Compute the worldViewProjection matrix
-        let worldViewProjection = twgl.m4.multiply(viewProjectionMatrix, world);
-
-        let lightColor;
-        if (light.go) {
-            // Semáforo en verde
-            lightColor = [0.0, 1.0, 0.0, 1.0]; // Verde brillante
-        } else {
-            // Semáforo en rojo
-            lightColor = [1.0, 0.0, 0.0, 1.0]; // Rojo brillante
-        }
-
-        // Compute the world inverse transpose matrix
-        let u_worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
-
-        // Set the model uniforms
-        let modelUniforms = {
-            u_world: world,
-            u_worldInverseTransform: u_worldInverseTransform,
-            u_worldViewProjection: worldViewProjection,
+        const modelUniforms = {
+            u_world: light.worldMatrix,
+            u_worldInverseTransform: light.worldInverseTransform,
+            u_worldViewProjection: twgl.m4.multiply(viewProjectionMatrix, light.worldMatrix),
             u_ambientColor: lightColor,
             u_diffuseColor: lightColor,
             u_specularColor: [0.1, 0.1, 0.1, 1.0],
@@ -1009,10 +993,7 @@ function drawTrafficLights(distance, trafficLightsVao, trafficLightsBufferInfo, 
         };
 
         twgl.setUniforms(programInfo, modelUniforms);
-
-        // Draw the object
         twgl.drawBufferInfo(gl, trafficLightsBufferInfo);
-
     }
 }
 
@@ -1057,4 +1038,50 @@ function setupUI() {
     modelFolder.add(modelProperties, 'shininess', 0, 600).step(1);
 }
 
-main()
+function checkGPU() {
+    const testCanvas = document.createElement('canvas');
+    const testGl = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');
+    if (!testGl) return false;
+
+    const debugInfo = testGl.getExtension('WEBGL_debug_renderer_info');
+    if (!debugInfo) return true;
+
+    const renderer = testGl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL).toLowerCase();
+    return !renderer.includes('swiftshader') &&
+        !renderer.includes('software') &&
+        !renderer.includes('llvmpipe') &&
+        !renderer.includes('microsoft basic');
+}
+
+const overlay = document.getElementById('startOverlay');
+const startBtn = document.getElementById('startBtn');
+const loadingMsg = document.getElementById('loadingMsg');
+const gpuWarning = document.getElementById('gpuWarning');
+const startTitle = document.getElementById('startTitle');
+const startSubtitle = document.getElementById('startSubtitle');
+
+if (!checkGPU()) {
+    gpuWarning.style.display = 'block';
+}
+
+function showSimulationEnded() {
+    startTitle.textContent = 'Simulation ended';
+    startSubtitle.textContent = 'The simulation has reached the maximum number of steps';
+    startBtn.textContent = 'Restart Simulation';
+    startBtn.disabled = false;
+    loadingMsg.style.display = 'none';
+    overlay.classList.remove('hidden');
+}
+
+startBtn.addEventListener('click', async () => {
+    startBtn.disabled = true;
+    startBtn.textContent = 'Starting...';
+    loadingMsg.style.display = 'none';
+    startTitle.textContent = 'Multi-Agent Traffic Simulation';
+    startSubtitle.textContent = 'City grid with autonomous vehicles, BFS pathfinding, and real-time traffic lights.';
+    loadingMsg.style.display = 'block';
+    simulationRunning = true;
+    agents.length = 0;
+    await main();
+    overlay.classList.add('hidden');
+});
