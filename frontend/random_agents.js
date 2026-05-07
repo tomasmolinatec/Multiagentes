@@ -214,6 +214,7 @@ let lastRenderTime = 0;
 // Initialize the frame count
 let frameCount = 0;
 let isUpdating = false;
+let simulationRunning = true;
 
 // Define settings for the lighting and camera
 const settings = {
@@ -376,7 +377,7 @@ async function main() {
     lastRenderTime = performance.now()
 
     // Draw the scene
-    await drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo);
+    drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBufferInfo, buildingsVao, trafficLightsVao, trafficLightsBufferInfo);
 }
 
 // Crea la geometría de las carreteras basándose en los datos de las carreteras
@@ -809,6 +810,11 @@ async function update() {
                     trafficLights.splice(i, 1);
                 }
             }
+
+            if (!result.running) {
+                simulationRunning = false;
+                showSimulationEnded();
+            }
         }
 
     } catch (error) {
@@ -877,7 +883,7 @@ function drawScene(gl, programInfo, agentsVao, agentsBufferInfo, buildingsBuffer
     frameCount++
 
     // Update the scene every 10 frames, without blocking the render loop
-    if (frameCount % 10 == 0 && !isUpdating) {
+    if (simulationRunning && frameCount % 10 == 0 && !isUpdating) {
         frameCount = 0
         isUpdating = true
         update().finally(() => { isUpdating = false })
@@ -1025,4 +1031,50 @@ function setupUI() {
     modelFolder.add(modelProperties, 'shininess', 0, 600).step(1);
 }
 
-main()
+function checkGPU() {
+    const testCanvas = document.createElement('canvas');
+    const testGl = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');
+    if (!testGl) return false;
+
+    const debugInfo = testGl.getExtension('WEBGL_debug_renderer_info');
+    if (!debugInfo) return true;
+
+    const renderer = testGl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL).toLowerCase();
+    return !renderer.includes('swiftshader') &&
+        !renderer.includes('software') &&
+        !renderer.includes('llvmpipe') &&
+        !renderer.includes('microsoft basic');
+}
+
+const overlay = document.getElementById('startOverlay');
+const startBtn = document.getElementById('startBtn');
+const loadingMsg = document.getElementById('loadingMsg');
+const gpuWarning = document.getElementById('gpuWarning');
+const startTitle = document.getElementById('startTitle');
+const startSubtitle = document.getElementById('startSubtitle');
+
+if (!checkGPU()) {
+    gpuWarning.style.display = 'block';
+}
+
+function showSimulationEnded() {
+    startTitle.textContent = 'Simulation ended';
+    startSubtitle.textContent = 'The simulation has reached the maximum number of steps';
+    startBtn.textContent = 'Restart Simulation';
+    startBtn.disabled = false;
+    loadingMsg.style.display = 'none';
+    overlay.classList.remove('hidden');
+}
+
+startBtn.addEventListener('click', async () => {
+    startBtn.disabled = true;
+    startBtn.textContent = 'Starting...';
+    loadingMsg.style.display = 'none';
+    startTitle.textContent = 'Multi-Agent Traffic Simulation';
+    startSubtitle.textContent = 'City grid with autonomous vehicles, BFS pathfinding, and real-time traffic lights.';
+    loadingMsg.style.display = 'block';
+    simulationRunning = true;
+    agents.length = 0;
+    await main();
+    overlay.classList.add('hidden');
+});

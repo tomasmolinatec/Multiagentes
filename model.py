@@ -169,33 +169,23 @@ class CityModel(Model):
                 self.grid.place_agent(car, pos)
     
 
+    MAX_STEPS = 400
+
     def step(self):
         """Advance the model by one step."""
-        # pprint.pprint(self.memo)
-
         self.schedule.step()
         self.datacollector.collect(self)
-        added = True
-        
-        # Agregamos coches
-        if self.schedule.steps % 1 == 0:
-            added = False
-            for pos in self.starting_positions:
-                if self.hasNoCars(pos):
-                    car = Car(self.unique_id, self, pos)
-                    self.unique_id += 1
-                    self.schedule.add_car(car)
-                    self.grid.place_agent(car, pos)
-                    added = True
-        # if self.schedule.steps % 10 == 0:
-            #  self.postStats()
 
-        if not added: #Parar si no se logro agregar mas coches
-            print("stop")
+        if self.schedule.steps >= CityModel.MAX_STEPS:
             self.running = False
+            return
 
-        # with open("data.json", "w") as json_file:
-        #     json.dump(self.memo, json_file, indent=4)
+        for pos in self.starting_positions:
+            if self.hasNoCars(pos):
+                car = Car(self.unique_id, self, pos)
+                self.unique_id += 1
+                self.schedule.add_car(car)
+                self.grid.place_agent(car, pos)
 
     def getRandomDest(self):
         return self.random.choice(self.destinations)

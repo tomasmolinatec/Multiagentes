@@ -1,29 +1,49 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <title>Agents Visualization</title>
-    <link rel="stylesheet" href="styles.css" />
-    <script defer type="module" src="random_agents.js"></script>
-  </head>
 
-  <body>
-    <div id="headerContainer">
-      <h1>Agents Visualization</h1>
+<head>
+  <title>Agents Visualization</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script defer type="module" src="random_agents.js"></script>
+</head>
+
+<body>
+  <div id="headerContainer">
+    <h1>Agents Visualization</h1>
+  </div>
+
+  <!-- Sección de Instrucciones -->
+  <div id="instructions">
+    <h2>Controles de la Camara</h2>
+    <ul>
+      <li><strong>Rotar la camara:</strong> Flechas del teclado</li>
+      <li>
+        <strong>Panear la camara:</strong> W (arriba), A (izquierda), S
+        (abajo), D (derecha)
+      </li>
+      <li><strong>Zoom:</strong> Teclas + y -</li>
+    </ul>
+  </div>
+
+  <!-- Overlay de inicio -->
+  <div id="startOverlay">
+    <div id="gpuWarning">
+      <strong>GPU acceleration is disabled</strong>
+      <p>
+        Your browser is rendering in software mode, which will make the
+        simulation very slow. To fix it, go to
+        <code>chrome://flags/#ignore-gpu-blocklist</code>, set it to
+        <strong>Enabled</strong>, and restart Chrome.
+      </p>
+      <p>You can still run the simulation, but expect poor performance.</p>
     </div>
+    <h2 id="startTitle">Multi-Agent Traffic Simulation</h2>
+    <p id="startSubtitle">City grid with autonomous vehicles, BFS pathfinding, and real-time traffic lights.</p>
+    <button id="startBtn">Start Simulation</button>
+    <p id="loadingMsg">Loading assets and connecting to server...</p>
+  </div>
 
-    <!-- Sección de Instrucciones -->
-    <div id="instructions">
-      <h2>Controles de la Camara</h2>
-      <ul>
-        <li><strong>Rotar la camara:</strong> Flechas del teclado</li>
-        <li>
-          <strong>Panear la camara:</strong> W (arriba), A (izquierda), S
-          (abajo), D (derecha)
-        </li>
-        <li><strong>Zoom:</strong> Teclas + y -</li>
-      </ul>
-    </div>
+  <canvas id="canvas"></canvas>
+</body>
 
-    <canvas id="canvas"></canvas>
-  </body>
 </html>

@@ -205,6 +205,7 @@ def updateModel():
                 {
                     "message": f"Model updated to step {currentStep}.",
                     "currentStep": currentStep,
+                    "running": randomModel.running,
                     "cars": carPositions,
                     "trafficLights": trafficLightPositions,
                 }
