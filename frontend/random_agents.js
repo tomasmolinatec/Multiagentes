@@ -626,6 +626,12 @@ async function getBuildings() {
                     [building.x + 0.5, building.y - 1, data.height - building.z - 0.5],
                     [0, 0, 0]
                 );
+                // Pre-compute static matrices once — buildings never move
+                let world = twgl.m4.identity();
+                world = twgl.m4.translate(world, newBuilding.position);
+                world = twgl.m4.scale(world, newBuilding.scale);
+                newBuilding.worldMatrix = world;
+                newBuilding.worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
                 buildings.push(newBuilding)
             }
         }
@@ -666,7 +672,14 @@ async function getTrafficLights() {
                         [0.2, 0.2, 0.2]
                     );
                     newLight.direction = lightData.direction;
-                    newLight.go = lightData.go; // Establecer el estado 'go'
+                    newLight.go = lightData.go;
+                    // Pre-compute static matrices once — traffic lights never move
+                    let world = twgl.m4.identity();
+                    world = twgl.m4.translate(world, newLight.position);
+                    world = twgl.m4.rotateY(world, getRotationAngle(oppositeDirection(newLight.direction)));
+                    world = twgl.m4.scale(world, newLight.scale);
+                    newLight.worldMatrix = world;
+                    newLight.worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
                     trafficLights.push(newLight);
                 }
             }
@@ -933,25 +946,10 @@ function drawBuildings(distance, buildingsVao, buildingsBufferInfo, viewProjecti
     gl.bindVertexArray(buildingsVao);
 
     for (const building of buildings) {
-        // Compute the world matrix
-        let world = twgl.m4.identity();
-        world = twgl.m4.translate(world, building.position);
-        world = twgl.m4.rotateX(world, building.rotation[0]);
-        world = twgl.m4.rotateY(world, building.rotation[1]);
-        world = twgl.m4.rotateZ(world, building.rotation[2]);
-        world = twgl.m4.scale(world, building.scale);
-
-        // Compute the worldViewProjection matrix
-        let worldViewProjection = twgl.m4.multiply(viewProjectionMatrix, world);
-
-        // Compute the world inverse transpose matrix
-        let u_worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
-
-        // Set the model uniforms
-        let modelUniforms = {
-            u_world: world,
-            u_worldInverseTransform: u_worldInverseTransform,
-            u_worldViewProjection: worldViewProjection,
+        const modelUniforms = {
+            u_world: building.worldMatrix,
+            u_worldInverseTransform: building.worldInverseTransform,
+            u_worldViewProjection: twgl.m4.multiply(viewProjectionMatrix, building.worldMatrix),
             u_ambientColor: modelProperties.ambientColor,
             u_diffuseColor: modelProperties.diffuseColor,
             u_specularColor: modelProperties.specularColor,
@@ -960,10 +958,7 @@ function drawBuildings(distance, buildingsVao, buildingsBufferInfo, viewProjecti
         };
 
         twgl.setUniforms(programInfo, modelUniforms);
-
-        // Draw the object
         twgl.drawBufferInfo(gl, buildingsBufferInfo);
-
     }
 }
 
@@ -971,38 +966,12 @@ function drawTrafficLights(distance, trafficLightsVao, trafficLightsBufferInfo, 
     gl.bindVertexArray(trafficLightsVao);
 
     for (const light of trafficLights) {
-        // Compute the world matrix
-        let world = twgl.m4.identity();
-        world = twgl.m4.translate(world, light.position);
+        const lightColor = light.go ? [0.0, 1.0, 0.0, 1.0] : [1.0, 0.0, 0.0, 1.0];
 
-        // Obtener el ángulo de rotación basado en la dirección opuesta
-        let rotationAngle = getRotationAngle(oppositeDirection(light.direction));
-        // Rotar alrededor del eje Y
-        world = twgl.m4.rotateY(world, rotationAngle);
-
-        // Aplicar escala
-        world = twgl.m4.scale(world, light.scale);
-
-        // Compute the worldViewProjection matrix
-        let worldViewProjection = twgl.m4.multiply(viewProjectionMatrix, world);
-
-        let lightColor;
-        if (light.go) {
-            // Semáforo en verde
-            lightColor = [0.0, 1.0, 0.0, 1.0]; // Verde brillante
-        } else {
-            // Semáforo en rojo
-            lightColor = [1.0, 0.0, 0.0, 1.0]; // Rojo brillante
-        }
-
-        // Compute the world inverse transpose matrix
-        let u_worldInverseTransform = twgl.m4.transpose(twgl.m4.inverse(world));
-
-        // Set the model uniforms
-        let modelUniforms = {
-            u_world: world,
-            u_worldInverseTransform: u_worldInverseTransform,
-            u_worldViewProjection: worldViewProjection,
+        const modelUniforms = {
+            u_world: light.worldMatrix,
+            u_worldInverseTransform: light.worldInverseTransform,
+            u_worldViewProjection: twgl.m4.multiply(viewProjectionMatrix, light.worldMatrix),
             u_ambientColor: lightColor,
             u_diffuseColor: lightColor,
             u_specularColor: [0.1, 0.1, 0.1, 1.0],
@@ -1011,10 +980,7 @@ function drawTrafficLights(distance, trafficLightsVao, trafficLightsBufferInfo, 
         };
 
         twgl.setUniforms(programInfo, modelUniforms);
-
-        // Draw the object
         twgl.drawBufferInfo(gl, trafficLightsBufferInfo);
-
     }
 }
 
