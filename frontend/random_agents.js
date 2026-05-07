@@ -196,7 +196,7 @@ class Camera {
 
 
 // URI del servidor de agentes
-const agent_server_uri = "http://localhost:8586/";
+const agent_server_uri = import.meta.env.VITE_API_URL ?? "http://localhost:8586/";
 
 // Arreglos para almacenar agentes y obstáculos
 const agents = [];
